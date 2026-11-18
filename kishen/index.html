@@ -246,12 +246,76 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     return db;
   }
 
+  /* 5. Claude for Odysseus and photo reading, through the relay in Supabase (functions/claude), which holds the API key.
+     Same shape as claude.ai's sample: sample(input, {tools, onText, signal, modelTier, images}) -> {text, truncated};
+     the page's own tools run here, in a loop, exactly as before. Null (feature hidden) until the key is set. */
+  let sampleP = null;
+  async function relay(body, signal) {
+    const { data: { session } } = await sb.auth.getSession();
+    let r;
+    try { r = await fetch(URL0 + '/functions/v1/claude', { method: 'POST', signal, headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: 'Bearer ' + (session ? session.access_token : KEY) }, body: JSON.stringify(Object.assign({ app: APP }, body)) }) }
+    catch (e) { const x = new Error(signal && signal.aborted ? 'Stopped' : 'No connection'); x.code = signal && signal.aborted ? 'cancelled' : 'unavailable'; throw x }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const x = new Error(j.message || 'Claude didn\'t answer'); x.code = j.code || 'upstream_error'; x.retryable = r.status >= 500; throw x }
+    return j;
+  }
+  const b64 = blob => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.onerror = rej; fr.readAsDataURL(blob) });
+  function makeSample() {
+    async function sample(input, opts) {
+      opts = opts || {};
+      let msgs = typeof input === 'string' ? [{ role: 'user', content: input }] : input.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content) }));
+      const merged = []; for (const m of msgs) { const l = merged[merged.length - 1]; if (l && l.role === m.role && typeof l.content === 'string') l.content += '\n\n' + m.content; else merged.push({ ...m }) }
+      msgs = merged;
+      if (opts.images && opts.images.length) { const last = msgs[msgs.length - 1]; const imgs = [];
+        for (const im of opts.images.slice(0, 4)) imgs.push({ type: 'image', source: { type: 'base64', media_type: im.type || 'image/jpeg', data: await b64(im) } });
+        last.content = imgs.concat([{ type: 'text', text: last.content }]) }
+      const tools = (opts.tools || []).map(t => ({ name: t.name, description: t.description || '', input_schema: t.inputSchema || { type: 'object', properties: {} } }));
+      const byName = Object.fromEntries((opts.tools || []).map(t => [t.name, t]));
+      let text = '', stop = '';
+      for (let turn = 0; turn < 8; turn++) {
+        const r = await relay({ messages: msgs, tools, tier: opts.modelTier || 'default', max_tokens: 1800 }, opts.signal);
+        const blocks = r.content || []; stop = r.stop_reason;
+        const t = blocks.filter(b => b.type === 'text').map(b => b.text).join('');
+        if (t) { text += (text && !text.endsWith('\n') ? '\n\n' : '') + t; try { opts.onText && opts.onText({ text, delta: t }) } catch (e) {} }
+        if (stop !== 'tool_use') break;
+        msgs.push({ role: 'assistant', content: blocks });
+        const results = [];
+        for (const b of blocks.filter(b => b.type === 'tool_use')) {
+          let out, err = false;
+          try { const tl = byName[b.name]; if (!tl) throw new Error('No tool called ' + b.name); out = await tl.execute(b.input || {}) } catch (e) { out = { error: String(e && e.message || e) }; err = true }
+          results.push({ type: 'tool_result', tool_use_id: b.id, content: typeof out === 'string' ? out : JSON.stringify(out === undefined ? null : out), is_error: err });
+        }
+        msgs.push({ role: 'user', content: results });
+      }
+      return { text, truncated: stop === 'max_tokens' };
+    }
+    sample.json = async (input, opts) => {
+      const r = await sample(typeof input === 'string' ? input + '\n\nReply with only the JSON, nothing else.' : input, opts);
+      const m = r.text.match(/[\[{][\s\S]*[\]}]/); if (!m) { const x = new Error('No JSON in the answer'); x.code = 'bad_json'; x.text = r.text; throw x }
+      return JSON.parse(m[0]);
+    };
+    sample.limits = async () => ({ images: true, tools: true });
+    return sample;
+  }
+  function getSample() {
+    return sampleP || (sampleP = (async () => {
+      if (!sb) return null;
+      try { const r = await fetch(URL0 + '/functions/v1/claude', { headers: { apikey: KEY } }); const j = await r.json(); if (!j.ready) return null } catch (e) { return null }
+      if (APP === 'kishen') {   /* Odysseus's brief lives in the locked database, not in this public page */
+        try { await (dbP || window.claude.use('db')); const { data } = await sb.from('docs').select('data').eq('app', APP).eq('col', 'coach').eq('id', 'odysseus').maybeSingle();
+          if (data && data.data && data.data.rules && typeof ODY_RULES !== 'undefined') ODY_RULES = data.data.rules } catch (e) {}
+      }
+      return makeSample();
+    })());
+  }
+
   const user = { isOwner: () => true, canEdit: () => true, can: () => true, id: async () => uid, me: async () => ({ id: uid, name: '' }), profiles: async () => ({}), search: async () => [] };
   const downloads = { save: async ({ filename, data }) => { const b = data instanceof Blob ? data : new Blob([data]); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || 'download'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000) } };
   window.claude = { use: name => {
     if (name === 'db') return dbP || (dbP = new Promise(r => { const go = () => start().then(r, () => r(null)); document.body ? go() : addEventListener('DOMContentLoaded', go) }));
     if (name === 'user') return Promise.resolve(user);
     if (name === 'downloads') return Promise.resolve(downloads);
+    if (name === 'sample') return getSample();
     return Promise.resolve(null);
   } };
   window.signOutWeb = () => sb && sb.auth.signOut();
