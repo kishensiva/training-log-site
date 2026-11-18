@@ -9,7 +9,7 @@ self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
   if (r.method !== 'GET' || /supabase\.co$/.test(u.hostname)) return;
   if (r.mode === 'navigate' || (u.origin === location.origin && u.pathname.endsWith('.html'))) {
-    e.respondWith(fetch(r).then(res => { const c = res.clone(); caches.open(V).then(x => x.put('./index.html', c)); return res }).catch(() => caches.match('./index.html')));
+    e.respondWith(fetch(r, { cache: 'no-cache' }).then(res => {   /* always ask GitHub for the newest page (it otherwise allows a 10-minute-old copy) */ const c = res.clone(); caches.open(V).then(x => x.put('./index.html', c)); return res }).catch(() => caches.match('./index.html')));
     return;
   }
   if (u.origin === location.origin || /(jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)$/.test(u.hostname)) {
