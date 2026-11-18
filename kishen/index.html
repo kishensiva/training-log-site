@@ -309,6 +309,48 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     })());
   }
 
+  /* 6. Strava, through the Strava relay in Supabase (functions/strava). Same callTool shape as the claude.ai connector,
+     so the app's own Strava code runs unchanged. Not connected yet → the app shows "Connect Strava", and tapping it
+     starts Strava's approval page; Strava sends you back to the app. */
+  let mcpP = null, stravaNeedsConnect = false;
+  async function stravaPost(body) {
+    const { data: { session } } = await sb.auth.getSession();
+    let r; try { r = await fetch(URL0 + '/functions/v1/strava', { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: 'Bearer ' + (session ? session.access_token : KEY) }, body: JSON.stringify(Object.assign({ app: APP }, body)) }) }
+    catch (e) { throw { code: 'upstream_error', retryable: true } }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { if (j.code === 'needs_reauth') { stravaNeedsConnect = true; stravaPrompt() } throw { code: j.code || 'upstream_error', retryable: !!j.retryable } }
+    return j;
+  }
+  /* one small card, once, on whatever screen is open; "Not now" hides it for 3 days */
+  let prompted = false;
+  function stravaPrompt() {
+    if (prompted) return; prompted = true;
+    try { const t = +localStorage.getItem('stvLater') || 0; if (Date.now() - t < 3 * 864e5) return } catch (e) {}
+    const st = document.createElement('style'); st.textContent = `.stvp{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:60;max-width:520px;margin:0 auto;background:var(--card,#141a24);color:var(--fg,#eef1f6);border:1px solid var(--line,#2a3242);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px -12px rgba(0,0,0,.55)}
+      .stvp b{font-size:16px}.stvp p{margin:0;font-size:14px;color:var(--muted,#97a2b4)}.stvp .r{display:flex;gap:8px}.stvp button{flex:1;min-height:44px;border-radius:12px;font:inherit;font-weight:700;border:1px solid var(--line,#2a3242);background:none;color:inherit}
+      .stvp button.go{background:#fc5200;border-color:#fc5200;color:#fff}`;
+    document.head.appendChild(st);
+    const c = document.createElement('div'); c.className = 'stvp'; c.setAttribute('role', 'dialog'); c.setAttribute('aria-label', 'Connect Strava');
+    c.innerHTML = '<b>Connect Strava</b><p>Bring your watch data into the app again: heart rate, calories and runs show up as soon as Strava has them.</p><div class="r"><button class="go" type="button">Connect Strava</button><button type="button">Not now</button></div>';
+    const [go, later] = c.querySelectorAll('button');
+    go.onclick = () => { go.textContent = 'Opening Strava…'; stravaConnect() };
+    later.onclick = () => { try { localStorage.setItem('stvLater', String(Date.now())) } catch (e) {} c.remove() };
+    document.body.appendChild(c);
+  }
+  async function stravaConnect() { try { const j = await stravaPost({ action: 'start' }); if (j.url) location.href = j.url } catch (e) {} }
+  function getMcp() {
+    return mcpP || (mcpP = (async () => {
+      if (!sb || APP !== 'kishen') return null;
+      try { const r = await fetch(URL0 + '/functions/v1/strava', { headers: { apikey: KEY } }); const j = await r.json(); if (!j.ready) return null } catch (e) { return null }
+      await (dbP || window.claude.use('db'));
+      try { const q = new URLSearchParams(location.search), s = q.get('strava');
+        if (s) { history.replaceState(null, '', location.pathname); setTimeout(() => { try { toast(s === 'connected' ? 'Strava connected' : s === 'declined' ? 'Strava wasn\'t connected' : 'Couldn\'t connect Strava. Try again.') } catch (e) {} }, 1500) } } catch (e) {}
+      document.addEventListener('click', e => { if (stravaNeedsConnect && e.target.closest && e.target.closest('[data-stvgo]')) { e.stopImmediatePropagation(); e.preventDefault(); stravaConnect() } }, true);
+      return { callTool: async (server, tool, args) => { if (server !== 'Strava') throw { code: 'server_not_connected' }; const j = await stravaPost({ action: 'call', tool, args }); stravaNeedsConnect = false; return { payload: j.payload } } };
+    })());
+  }
+  window.stravaConnect = stravaConnect;
+
   const user = { isOwner: () => true, canEdit: () => true, can: () => true, id: async () => uid, me: async () => ({ id: uid, name: '' }), profiles: async () => ({}), search: async () => [] };
   const downloads = { save: async ({ filename, data }) => { const b = data instanceof Blob ? data : new Blob([data]); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || 'download'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000) } };
   window.claude = { use: name => {
@@ -316,6 +358,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     if (name === 'user') return Promise.resolve(user);
     if (name === 'downloads') return Promise.resolve(downloads);
     if (name === 'sample') return getSample();
+    if (name === 'mcp') return getMcp();
     return Promise.resolve(null);
   } };
   window.signOutWeb = () => sb && sb.auth.signOut();
@@ -4704,7 +4747,7 @@ async function stvSync(force){if(!mcp||!db||!stvLoaded||stvBusy)return;if(!force
     stvErr=null}
   catch(e){stvErr=(e&&e.code)||'upstream_error'}
   stvBusy=false;if((changed||was!==stvErr)&&mode!=='live'&&mode!=='feedback')renderSession()}
-function stvErrTxt(){const c=stvErr;return c==='needs_reauth'?['Strava needs reconnecting in claude.ai Settings → Connectors.','']:
+function stvErrTxt(){const c=stvErr;return c==='needs_reauth'?['Connect Strava to bring your watch data in.','Connect Strava']:
   c==='server_not_connected'?['Add Strava in claude.ai Settings → Connectors to pull your watch data in.','']:
   c==='selection_required'?['Claude needs you to pick which Strava connection to use.','Choose Strava']:
   /not_in_manifest|approval_required|consent_required/.test(c)?['Strava isn\'t allowed for this page yet.','Allow Strava']:
