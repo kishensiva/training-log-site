@@ -161,27 +161,31 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
 
   function signInScreen(note) {
     return new Promise(res => {
-      const o = overlay(`<form id="wsgF" novalidate><h1>${esc(TITLE)}</h1><p>Sign in to load your training.</p>
+      const o = overlay(`<form id="wsgF" novalidate><h1>${esc(TITLE)}</h1><p id="wsgH">Sign in to load your training.</p>
         <label>Email<input id="wsgE" type="email" autocomplete="username" inputmode="email" required></label>
         <label>Password<input id="wsgP" type="password" autocomplete="current-password" minlength="8" required></label>
         <button class="go" id="wsgGo" type="submit">Sign in</button>
         <button class="lk" id="wsgNew" type="button">First time here? Create your account</button>
         <p class="m" id="wsgM" role="status">${note ? esc(note) : ''}</p></form>`);
       const m = (t, c) => { const e = o.querySelector('#wsgM'); e.textContent = t; e.className = 'm' + (c ? ' ' + c : '') };
-      let mode = 'in';
-      o.querySelector('#wsgNew').onclick = () => { mode = mode === 'in' ? 'up' : 'in';
-        o.querySelector('#wsgGo').textContent = mode === 'in' ? 'Sign in' : 'Create account';
+      /* first visit on this phone opens on Create account; after that, Sign in */
+      let mode = 'in'; try { if (!(window.__realStorage || localStorage).getItem('webSeen:' + APP)) mode = 'up' } catch (e) {}
+      const setMode = () => { o.querySelector('#wsgGo').textContent = mode === 'in' ? 'Sign in' : 'Create account';
         o.querySelector('#wsgNew').textContent = mode === 'in' ? 'First time here? Create your account' : 'Already have an account? Sign in';
-        o.querySelector('#wsgP').autocomplete = mode === 'in' ? 'current-password' : 'new-password'; m('') };
+        o.querySelector('#wsgP').autocomplete = mode === 'in' ? 'current-password' : 'new-password';
+        o.querySelector('#wsgH').textContent = mode === 'in' ? 'Sign in to load your training.' : 'Create your account: your email and a password (8+ characters).' };
+      const seen = () => { try { (window.__realStorage || localStorage).setItem('webSeen:' + APP, '1') } catch (e) {} };
+      setMode();
+      o.querySelector('#wsgNew').onclick = () => { mode = mode === 'in' ? 'up' : 'in'; setMode(); m('') };
       o.querySelector('#wsgF').onsubmit = async ev => { ev.preventDefault();
         const email = o.querySelector('#wsgE').value.trim(), password = o.querySelector('#wsgP').value;
         if (!/^\S+@\S+\.\S+$/.test(email)) { m('Type the email you use for this app.', 'err'); return }
         if (password.length < 8) { m('Use at least 8 characters for the password.', 'err'); return }
         const b = o.querySelector('#wsgGo'); b.disabled = true; m(mode === 'in' ? 'Signing in…' : 'Creating your account…');
         try {
-          if (mode === 'in') { const { data, error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; res(data.session) }
-          else { const { data, error } = await sb.auth.signUp({ email, password }); if (error) throw error;
-            if (data.session) res(data.session); else { m('Account created. Check your email for the confirmation link, then come back and sign in.', 'ok'); mode = 'in'; o.querySelector('#wsgGo').textContent = 'Sign in' } }
+          if (mode === 'in') { const { data, error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; seen(); res(data.session) }
+          else { const { data, error } = await sb.auth.signUp({ email, password, options: { emailRedirectTo: location.href.split('#')[0].split('?')[0] } }); if (error) throw error;
+            seen(); if (data.session) res(data.session); else { mode = 'in'; setMode(); m('Account created. Open the email we just sent and tap the link, then come back here and sign in.', 'ok') } }
         } catch (e) { const t = String(e && e.message || e);
           m(/Invalid login/i.test(t) ? 'That email and password don\'t match. Check both and try again.' : /not confirmed/i.test(t) ? 'Confirm your email first: open the link we sent you, then sign in.' : /fetch|network/i.test(t) ? 'No connection. Try again when you have signal.' : t, 'err') }
         finally { b.disabled = false } };
@@ -190,6 +194,20 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
 
   /* 3. is this login the owner of this app? (Kishen links each login to its app once, in the database) */
   async function owns() { const { data, error } = await sb.from('apps').select('app').eq('app', APP).maybeSingle(); if (error) throw error; return !!data }
+  /* an invited login links itself the first time (the invite holds the email Kishen gave; confirmed logins only) */
+  async function claim() { try { const { data, error } = await sb.rpc('claim_app', { a: APP }); return !error && data === true } catch (e) { return false } }
+
+  /* iPhone: the Home Screen app keeps its own sign-in, separate from Safari, so add it to the Home Screen first */
+  const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const STANDALONE = (() => { try { return navigator.standalone === true || matchMedia('(display-mode: standalone)').matches } catch (e) { return false } })();
+  function installFirst() {
+    let skip = false; try { skip = sessionStorage.getItem('webInstallSkip') === '1' } catch (e) {}
+    if (!IOS || STANDALONE || skip) return Promise.resolve();
+    return new Promise(res => { const o = overlay(`<div class="bx"><h1>Put it on your Home Screen</h1><p>It opens like a real app, full screen, even with no signal. Takes 10 seconds:</p>
+      <p style="color:inherit"><b>1.</b> Tap <b>Share</b> at the bottom of Safari (the square with the arrow ⬆︎).<br><b>2.</b> Scroll down, tap <b>Add to Home Screen</b>, then <b>Add</b>.<br><b>3.</b> Open the new icon on your Home Screen and sign up there.</p>
+      <button class="lk" id="wsgK" type="button">Use it in Safari instead</button></div>`);
+      o.querySelector('#wsgK').onclick = () => { try { sessionStorage.setItem('webInstallSkip', '1') } catch (e) {} res() } });
+  }
   function notLinked(email) {
     return new Promise(res => { const o = overlay(`<div class="bx"><h1>Almost there</h1><p>You're signed in as <b>${esc(email)}</b>, but this login isn't linked to this app yet. Ask Kishen to link it, then tap Try again.</p>
       <button class="go" id="wsgT">Try again</button><button class="lk" id="wsgO">Sign out</button></div>`);
@@ -228,10 +246,12 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   async function start() {
     if (!sb) { overlay('<div class="bx"><h1>Can\'t load</h1><p>The app couldn\'t load its database library. Check your connection and reopen the app.</p></div>'); return null }
     let { data: { session } } = await sb.auth.getSession();
+    if (!session) await installFirst();
     for (;;) {
       if (!session) session = await signInScreen();
       try {
         if (await owns()) break;
+        if (await claim() && await owns()) break;
         const r = await notLinked(session.user.email); if (r === 'out') session = null;
       } catch (e) {
         /* offline with a saved session: open with what's on the phone; writes will retry */
@@ -239,7 +259,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
         session = await signInScreen('Couldn\'t check your login: ' + (e && e.message || e));
       }
     }
-    uid = session.user.id; close();
+    uid = session.user.id; close(); try { (window.__realStorage || localStorage).setItem('webSeen:' + APP, '1') } catch (e) {}
     const db = makeSbDb(sb, APP);
     try { await maybeImport(db) } catch (e) {} close();
     sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') location.reload() });
