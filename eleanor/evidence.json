@@ -1,0 +1,315 @@
+{
+ "version": "eleanor-1",
+ "note": "Eleanor's evidence library: the rules her plan and her coach follow, and the research behind them.",
+ "grades": {
+  "strong": "Strong: several meta-analyses agree",
+  "moderate": "Moderate: a meta-analysis with uncertainty, or good trials",
+  "limited": "Limited: small or observational studies",
+  "coach": "Coach's call: no direct study, a practical rule"
+ },
+ "topics": [
+  {
+   "title": "Your race",
+   "items": [
+    {
+     "id": "hyrox",
+     "title": "What HYROX demands",
+     "rule": "Your week is built around the race: two run-focused days, an engine day, two strength days and a Saturday sim, because running is most of the race. In Doubles you both run all 8 km together and share each station, so you train every station at about half its race volume.",
+     "finding": "In a simulated HYROX race, running took about 60% of total time, and VO2max was the strongest predictor of finish time (more endurance training also helped). Wall balls produced the highest effort and lactate, while grip strength didn't predict the result.",
+     "sources": [
+      {
+       "cite": "Brandt et al. 2025, Front Physiol",
+       "q": "Brandt Ebel Lebahn Schmidt acute physiological responses performance determinants Hyrox"
+      }
+     ],
+     "grade": "limited",
+     "note": "A small study (11 people), but it's the best direct HYROX data so far."
+    },
+    {
+     "id": "stations",
+     "title": "Gym stand-ins for the stations",
+     "rule": "Your condo gym has no sled, SkiErg or wall ball, so each station has the closest stand-in: cable ski pulls, an incline treadmill push, heavy rope rows on the cable, dumbbell thrusters and goblet lunges. When you can get on the real thing, swap it in with ⇄.",
+     "finding": "Training transfers best when it looks like the task: same movement, same muscles, similar effort. Stand-ins train the engine and the muscles; the real equipment adds the technique.",
+     "sources": [],
+     "grade": "coach",
+     "note": "Buying a 4 kg wall ball is the cheapest upgrade: wall balls are the hardest station."
+    },
+    {
+     "id": "taper",
+     "title": "Race week taper",
+     "rule": "The last week before the race cuts the volume a lot but keeps a little speed: short, sharp efforts and plenty of rest, with the day before off.",
+     "finding": "A meta-analysis of tapering found the best results from about 2 weeks, cutting training volume by roughly 40–60% while keeping intensity and how often you train.",
+     "sources": [
+      {
+       "cite": "Bosquet et al. 2007, Med Sci Sports Exerc (meta-analysis)",
+       "q": "Bosquet Montpetit Arvisais Mujika effects of tapering on performance meta-analysis"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Your plan has about a 1-week taper because the block is short."
+    }
+   ]
+  },
+  {
+   "title": "Your cycle",
+   "items": [
+    {
+     "id": "cycle",
+     "title": "Training with your cycle",
+     "rule": "Your plan goes a little lighter the week before your period (one less set, easier runs) and by feel during it: Express or an easy session is always fine. It's guided by what you log, not by a fixed rule.",
+     "finding": "A meta-analysis found exercise performance may be trivially lower in the early follicular phase (around your period) on average, but the effect was small and varied a lot between women, so the authors recommend a personal approach. A later review found no clear effect of cycle phase on strength performance or strength training results.",
+     "sources": [
+      {
+       "cite": "McNulty et al. 2020, Sports Med (meta-analysis)",
+       "q": "McNulty effects of menstrual cycle phase on exercise performance eumenorrheic women meta-analysis"
+      },
+      {
+       "cite": "Colenso-Semple et al. 2023, Front Sports Act Living",
+       "q": "Colenso-Semple current evidence shows no influence of menstrual cycle phase on strength performance or adaptations"
+      }
+     ],
+     "grade": "moderate",
+     "note": "How you feel on the day matters more than the calendar."
+    }
+   ]
+  },
+  {
+   "title": "Getting stronger",
+   "items": [
+    {
+     "id": "load",
+     "title": "Heavy and light both build muscle",
+     "rule": "Strength work sits around 8–12 reps; stand-in and engine work goes lighter and faster.",
+     "finding": "Light loads (60% of 1RM or less) and heavy loads built similar muscle when sets were taken close to failure, but heavy loads built more 1RM strength.",
+     "sources": [
+      {
+       "cite": "Schoenfeld et al. 2017, J Strength Cond Res 31:3508",
+       "q": "Schoenfeld 2017 strength and hypertrophy adaptations between low- vs high-load resistance training meta-analysis"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "prog",
+     "title": "How weights go up",
+     "rule": "Hit the top of the rep range on every set and the weight goes up one step next time; otherwise same weight, one more rep.",
+     "finding": "In trained lifters, progressing by adding reps or by adding load produced similar muscle growth and similar 1RM gains over 8 weeks.",
+     "sources": [
+      {
+       "cite": "Plotkin et al. 2022, PeerJ 10:e14142",
+       "q": "Plotkin 2022 progressive overload without progressing load"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "rir",
+     "title": "How close to failure",
+     "rule": "Working sets stop about 2 reps short of failure, so you can train hard and still run well the next day.",
+     "finding": "Muscle growth improves as sets end closer to failure, while strength depends more on how heavy the load is (Robinson 2024). Going all the way to failure gave similar growth to stopping a little short (Refalo 2023), and sets taken to failure needed roughly 24–48 hours longer to recover (Morán-Navarro 2017).",
+     "sources": [
+      {
+       "cite": "Robinson et al. 2024, Sports Med 54:2209",
+       "q": "Robinson 2024 proximity to failure resistance training hypertrophy strength meta-regression"
+      },
+      {
+       "cite": "Refalo et al. 2023, Sports Med",
+       "q": "Refalo 2023 proximity to failure skeletal muscle hypertrophy meta-analysis"
+      },
+      {
+       "cite": "Morán-Navarro et al. 2017, Eur J Appl Physiol",
+       "q": "Moran-Navarro 2017 time course of recovery resistance training leading or not to failure"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "rest",
+     "title": "Rest between sets",
+     "rule": "About 60–90 seconds between strength sets; circuits only rest between rounds.",
+     "finding": "A Bayesian meta-analysis of 9 trials found a small growth benefit from resting longer than 60 seconds, likely because you keep more reps per set, and no clear extra benefit beyond about 90 seconds.",
+     "sources": [
+      {
+       "cite": "Singer et al. 2024, Front Sports Act Living",
+       "q": "Singer 2024 give it a rest inter-set rest interval hypertrophy Bayesian meta-analysis"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "setstr",
+     "title": "Straight sets, not pyramids",
+     "rule": "Each lift uses one weight for every working set, and it goes up once every set hits the top of the range.",
+     "finding": "32 trained men each trained one leg with an ascending pyramid, drop sets or traditional straight sets, with total volume matched to the other leg's straight sets. Quadriceps growth (about 7.5–7.8%) and leg press and leg extension strength gains were the same across all three methods. Volume mattered more than the set pattern.",
+     "sources": [
+      {
+       "cite": "Angleri, Ugrinowitsch & Libardi 2017, Eur J Appl Physiol",
+       "q": "Angleri Ugrinowitsch Libardi crescent pyramid drop-set traditional resistance training"
+      }
+     ],
+     "grade": "limited",
+     "note": ""
+    },
+    {
+     "id": "inj",
+     "title": "Warm-ups and strength work prevent injury",
+     "rule": "Every session starts with its own warm-up, and core and grip work stay in even when time is short.",
+     "finding": "Across 25 trials (26,610 people), strength training cut sports injuries to less than a third, while stretching showed no protective effect (Lauersen 2014). A review found warm-ups lowered injury risk in most studies (Fradkin 2010).",
+     "sources": [
+      {
+       "cite": "Lauersen, Bertelsen & Andersen 2014, Br J Sports Med",
+       "q": "Lauersen 2014 effectiveness of exercise interventions to prevent sports injuries meta-analysis"
+      },
+      {
+       "cite": "Fradkin, Zazryn & Smoliga 2010, J Strength Cond Res",
+       "q": "Fradkin 2010 effects of warming-up on physical performance systematic review"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "recov",
+     "title": "Muscle recovery map",
+     "rule": "3+ hard sets keep a muscle 'worked' for about 48 hours. Soreness slows things down; it never decides alone.",
+     "finding": "Sets taken to failure needed roughly 24–48 hours longer to recover strength and power (Morán-Navarro 2017). Unfamiliar exercises cause more damage the first time, and much less once repeated (the repeated-bout effect; McHugh 2003).",
+     "sources": [
+      {
+       "cite": "Morán-Navarro et al. 2017, Eur J Appl Physiol",
+       "q": "Moran-Navarro 2017 time course of recovery resistance training leading or not to failure"
+      },
+      {
+       "cite": "McHugh 2003, Scand J Med Sci Sports",
+       "q": "McHugh 2003 recent advances in the understanding of the repeated bout effect"
+      }
+     ],
+     "grade": "moderate",
+     "note": "It's an estimate from your logs, not a measurement."
+    },
+    {
+     "id": "dropset",
+     "title": "Drop sets",
+     "rule": "Your own drop sets (the + Drop set button) are yours to add on the last set of a machine or isolation lift.",
+     "finding": "A meta-analysis of 5 trials (142 people) found drop sets built similar muscle to traditional sets, and some drop-set protocols took about a half to a third of the time.",
+     "sources": [
+      {
+       "cite": "Sødal et al. 2023, Sports Med Open",
+       "q": "Sodal 2023 effects of drop sets on skeletal muscle hypertrophy systematic review meta-analysis"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Strength-specific benefits aren't shown, so drop sets are for muscle and time, not for your main strength lifts."
+    },
+    {
+     "id": "superset",
+     "title": "Supersets",
+     "rule": "Your own supersets (the Superset button) are yours to add on strength days: no rest between the two, then rest after both.",
+     "finding": "A meta-analysis of 19 studies (313 people) found supersets kept total reps and volume similar while making sessions shorter and more efficient, with similar long-term strength and muscle gains. They felt harder (higher effort ratings and lactate). Opposing-muscle supersets kept volume best; pairing two moves for the same muscle reduced the volume you could lift.",
+     "sources": [
+      {
+       "cite": "Zhang, Weakley et al. 2025, Sports Med",
+       "q": "Zhang Weakley 2025 superset versus traditional resistance training prescriptions systematic review meta-analysis"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "order",
+     "title": "Fresh for strength, tired on purpose for the race",
+     "rule": "On strength days (Tuesday and Friday) the big lifts come first while you're fresh: if equipment is taken, take the coach's pick or a free swap, or do the next exercise first, rather than leaving a big lift to the end. On engine and sim days being tired is the point: racing means running and working stations on tired legs, so the order there stays as planned.",
+     "finding": "Exercises done earlier in a session get more reps and more strength, and those done later lose reps to fatigue; strength gains were greatest for exercises done first, while muscle growth was similar whatever the order.",
+     "sources": [
+      {
+       "cite": "Simão et al. 2012, Sports Med (review)",
+       "q": "Simao exercise order in resistance training Sports Medicine 2012"
+      },
+      {
+       "cite": "Nunes et al. 2021, Eur J Sport Sci (meta-analysis)",
+       "q": "Nunes resistance exercise order muscular strength hypertrophy meta-analysis 2021"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Training stations on tired legs for the race is the coach's call, built on what HYROX demands (see 'What HYROX demands')."
+    }
+   ]
+  },
+  {
+   "title": "Running and recovery",
+   "items": [
+    {
+     "id": "polar",
+     "title": "Mostly easy, a little hard",
+     "rule": "Most running is easy enough to talk, with one harder run a week and the Saturday sim as the hard day.",
+     "finding": "Elite endurance athletes do about 80% of their sessions at low intensity (Seiler 2010). In a 9-week trial with 48 trained athletes, this polarized mix raised VO2 peak about 12%, more than threshold-heavy or high-volume training (Stöggl & Sperlich 2014).",
+     "sources": [
+      {
+       "cite": "Seiler 2010, Int J Sports Physiol Perform",
+       "q": "Seiler 2010 what is best practice for training intensity and duration distribution in endurance athletes"
+      },
+      {
+       "cite": "Stöggl & Sperlich 2014, Front Physiol 5:33",
+       "q": "Stoggl Sperlich 2014 polarized training greater impact on key endurance variables"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "conc",
+     "title": "Lifting and running together",
+     "rule": "Hard runs and hard leg days sit on different days, and you never do two sessions in one morning.",
+     "finding": "A meta-analysis of 43 studies found adding cardio did not reduce muscle growth or maximal strength. It slightly blunted explosive strength, mostly when both were done in the same session; separating them by 3+ hours removed that effect.",
+     "sources": [
+      {
+       "cite": "Schumann et al. 2022, Sports Med 52:601",
+       "q": "Schumann 2022 compatibility of concurrent aerobic and strength training skeletal muscle size function"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "subj",
+     "title": "How you feel counts",
+     "rule": "Tired, sore or flat counts. A tired morning gets Express or an easy session, no guilt.",
+     "finding": "A systematic review found self-reported fatigue, soreness, mood and stress tracked training load more consistently than blood markers, heart rate or HRV.",
+     "sources": [
+      {
+       "cite": "Saw, Main & Gastin 2016, Br J Sports Med 50:281",
+       "q": "Saw Main Gastin 2016 monitoring the athlete training response subjective self-reported measures trump commonly used objective measures"
+      }
+     ],
+     "grade": "strong",
+     "note": ""
+    },
+    {
+     "id": "sleep",
+     "title": "Sleep",
+     "rule": "Short sleep makes the day lighter; a week of poor sleep makes sleep the priority over extra training.",
+     "finding": "Across 69 studies, acute sleep loss cut exercise performance by about 7.6% on average. Waking earlier than usual hurt more than going to bed late, and performance dropped about 0.4% for every extra hour awake before training (Craven 2022). Extending sleep improved sprint speed and accuracy in athletes (Mah 2011).",
+     "sources": [
+      {
+       "cite": "Craven et al. 2022, Sports Med 52:2669",
+       "q": "Craven 2022 effects of acute sleep loss on physical performance systematic meta-analytical review"
+      },
+      {
+       "cite": "Mah et al. 2011, Sleep 34:943",
+       "q": "Mah 2011 effects of sleep extension on athletic performance basketball"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "cooldown",
+     "title": "Cool-down and stretching",
+     "rule": "The short cool-down after each session keeps hips, calves and shoulders moving.",
+     "finding": "A review found active cool-downs do little for next-day performance, soreness or injury risk. Regular stretching does improve range of motion over weeks, which is why the cool-down stays.",
+     "sources": [
+      {
+       "cite": "Van Hooren & Peake 2018, Sports Med",
+       "q": "Van Hooren Peake 2018 do we need a cool-down after exercise"
+      }
+     ],
+     "grade": "moderate"
+    }
+   ]
+  }
+ ]
+}

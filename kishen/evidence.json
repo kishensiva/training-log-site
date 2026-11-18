@@ -1,0 +1,663 @@
+{
+ "version": "2026-10-20",
+ "note": "Reference library for the Training Log and its coach. Findings are group averages from published studies; your own logs decide how they apply to you. Grades: strong = several meta-analyses agree; moderate = a meta-analysis with uncertainty, or good trials; limited = small or observational studies; coach = no direct study, a practical rule.",
+ "grades": {
+  "strong": "Strong: several meta-analyses agree",
+  "moderate": "Moderate: a meta-analysis with uncertainty, or good trials",
+  "limited": "Limited: small or observational studies",
+  "coach": "Coach's call: no direct study, a practical rule"
+ },
+ "topics": [
+  {
+   "id": "growth",
+   "title": "Muscle growth",
+   "items": [
+    {
+     "id": "vol",
+     "title": "Weekly sets per muscle",
+     "rule": "Quads, hamstrings and glutes get about 12–16 hard sets a week each; calves about 9; upper body is held at maintenance (3–7). After a session the coach adds a set to a leg muscle that recovered well and was trained short of failure, and removes one if it was still sore going in.",
+     "finding": "More weekly sets build more muscle, with diminishing returns: a meta-regression of 67 studies (2,058 people) found growth kept rising with volume but each extra set added less. An earlier meta-analysis found 10 or more sets a week per muscle grew more than fewer than 5, with each added set worth about +0.4% growth.",
+     "sources": [
+      {
+       "cite": "Pelland et al. 2024, SportRxiv (meta-regression)",
+       "q": "Pelland resistance training dose-response weekly volume frequency hypertrophy strength"
+      },
+      {
+       "cite": "Schoenfeld, Ogborn & Krieger 2017, J Sports Sci",
+       "q": "Schoenfeld Ogborn Krieger 2017 dose-response weekly resistance training volume muscle mass"
+      }
+     ],
+     "grade": "strong",
+     "note": "Adding or removing a set from soreness and pump is the coach's call; the volume range itself is well supported."
+    },
+    {
+     "id": "rir",
+     "title": "How close to failure",
+     "rule": "Working sets stop short of failure, by phase: about 3 reps left in weeks 1–4, about 2 in strength weeks (heavy sets near failure cost the most recovery), 2 then 1 in later hypertrophy weeks, and about 4 in deload weeks. Tap \"reps left\" after the last set of each lift. On the main lifts it changes next time's weight: 4+ left (3+ in the 1-rep-short weeks) with every set in range means one extra step, even if you missed the top of the range, never more than a 10% jump. 0 left keeps the weight until the reps come. Not used in deload weeks or the first session of a new block.",
+     "finding": "Muscle growth improves as sets end closer to failure, while strength depends more on how heavy the load is (Robinson 2024). Going all the way to failure gave similar growth to stopping a little short (Refalo 2023), and sets taken to failure needed roughly 24–48 hours longer to recover (Morán-Navarro 2017). Adjusting the load to how hard sets felt (autoregulation) improved maximum strength more than fixed loading in a meta-analysis of 8 studies in trained athletes (effect size 0.64; Zhang 2021). The studies were small (166 people) and short (5–10 weeks).",
+     "sources": [
+      {
+       "cite": "Robinson et al. 2024, Sports Med 54:2209",
+       "q": "Robinson 2024 proximity to failure resistance training hypertrophy strength meta-regression"
+      },
+      {
+       "cite": "Refalo et al. 2023, Sports Med",
+       "q": "Refalo 2023 proximity to failure skeletal muscle hypertrophy meta-analysis"
+      },
+      {
+       "cite": "Morán-Navarro et al. 2017, Eur J Appl Physiol",
+       "q": "Moran-Navarro 2017 time course of recovery resistance training leading or not to failure"
+      },
+      {
+       "cite": "Zhang et al. 2021, Front Physiol 12:651112",
+       "q": "Zhang 2021 auto-regulation fixed-loading maximum strength meta-analysis"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "load",
+     "title": "Heavy and light both build muscle",
+     "rule": "Main lifts sit in heavier ranges (6–10 reps) for strength; isolation and calf work go lighter and higher (12–20).",
+     "finding": "Light loads (60% of 1RM or less) and heavy loads built similar muscle when sets were taken close to failure, but heavy loads built more 1RM strength.",
+     "sources": [
+      {
+       "cite": "Schoenfeld et al. 2017, J Strength Cond Res 31:3508",
+       "q": "Schoenfeld 2017 strength and hypertrophy adaptations between low- vs high-load resistance training meta-analysis"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "prog",
+     "title": "How weights go up",
+     "rule": "Double progression: hit the top of the rep range on every set and the weight goes up one step (back to the bottom of the range); otherwise same weight and one more rep per set.",
+     "finding": "In trained lifters, progressing by adding reps or by adding load produced similar muscle growth and similar 1RM gains over 8 weeks.",
+     "sources": [
+      {
+       "cite": "Plotkin et al. 2022, PeerJ 10:e14142",
+       "q": "Plotkin 2022 progressive overload without progressing load"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "rest",
+     "title": "Rest between sets",
+     "rule": "About 2 minutes on the main leg lifts, 60–90 seconds on isolation work; the rest timer starts itself.",
+     "finding": "A Bayesian meta-analysis of 9 trials found a small growth benefit from resting longer than 60 seconds, likely because you keep more reps per set, and no clear extra benefit beyond about 90 seconds.",
+     "sources": [
+      {
+       "cite": "Singer et al. 2024, Front Sports Act Living",
+       "q": "Singer 2024 give it a rest inter-set rest interval hypertrophy Bayesian meta-analysis"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "freq",
+     "title": "Training each muscle twice a week",
+     "rule": "Each leg muscle is trained twice a week (Lower A and Lower B).",
+     "finding": "Once weekly volume is equal, how often you train a muscle makes little difference to growth, but more frequent practice helps strength, with diminishing returns.",
+     "sources": [
+      {
+       "cite": "Pelland et al. 2024, SportRxiv (meta-regression)",
+       "q": "Pelland resistance training dose-response weekly volume frequency hypertrophy strength"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "vary",
+     "title": "Swapping in fresh exercises",
+     "rule": "A lift that hasn't progressed in 3 sessions, or keeps getting skipped, gets one same-muscle alternative. A new exercise stays at least 6 weeks; no more than 2 swaps at once.",
+     "finding": "A systematic review found some exercise variation can add a little muscle growth and helps motivation, but changing exercises too often, or at random, slows strength gains.",
+     "sources": [
+      {
+       "cite": "Kassiano et al. 2022, J Strength Cond Res",
+       "q": "Kassiano 2022 varying resistance exercises muscle hypertrophy strength systematic review"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "deload",
+     "title": "Deload weeks 8 and 12",
+     "rule": "Weeks 8 and 12 are deloads: same exercises, about half the sets, about 10% lighter, and about 4 reps left on every set. Intervals drop to 3 and the long run is shorter. You keep training; it's never a week off. Deload sessions don't count against progress or the ghost race.",
+     "finding": "An international panel of strength and physique coaches defined a deload as a period of reduced training stress to shed fatigue, promote recovery and prepare for the next block (Bell 2023). In 39 trained adults, a full week off halfway through a 9-week program didn't add muscle and was linked to smaller lower-body strength gains than training straight through (Coleman 2024), which is why yours reduce the training rather than stopping it.",
+     "sources": [
+      {
+       "cite": "Bell et al. 2023, Sports Med Open 9:87 (Delphi consensus)",
+       "q": "Bell integrating deloading strength physique sports training Delphi consensus"
+      },
+      {
+       "cite": "Coleman et al. 2024, PeerJ 12:e16777",
+       "q": "Coleman 2024 gaining more from doing less deload resistance training"
+      }
+     ],
+     "grade": "limited",
+     "note": "The half-sets and 10% are the coach's call; the evidence says reduce, don't stop. Week 4 is no longer a lighter week (his call, 29 Oct)."
+    },
+    {
+     "id": "setstr",
+     "title": "One weight, then back off",
+     "rule": "Your working sets start at one weight and stay there while your reps stay in the range. If a set falls below the bottom of the range, the remaining sets drop about 10% (at least one weight step) so they land back in range, marked ↓. The weight goes up next time once 2 or more sets at your top weight reach the top of the range. No climbing set by set: warm-up sets handle the build-up.",
+     "finding": "The set pattern itself matters little: 32 trained men trained one leg with an ascending pyramid, drop sets or straight sets, volume matched, and gained the same quadriceps size (about 7.5–7.8%) and strength with all three (Angleri 2017). What drives growth is hard sets and volume. Keeping the same weight let reps fall below range in later sets; in 28 trained women doing 4 sets of leg press to failure, cutting the load about 10% after each set kept most sets in the 8–12 range (Machado 2022). Your own Upper on 29 Oct: pull-ups 10, 10, 6, 5 and incline press 10, 8, 6 at one weight.",
+     "sources": [
+      {
+       "cite": "Angleri, Ugrinowitsch & Libardi 2017, Eur J Appl Physiol",
+       "q": "Angleri Ugrinowitsch Libardi crescent pyramid drop-set traditional resistance training"
+      },
+      {
+       "cite": "Machado, Koch & Machado 2022, TRENDS in Sport Sciences 29(2)",
+       "q": "Machado Koch planned load reduction strategies maintain repetitions leg press women"
+      }
+     ],
+     "grade": "limited",
+     "note": "Neither study is large, so this is a practical rule rather than a proven one: one weight keeps progress easy to read, the back-off keeps late sets useful. Changed 29 Oct at his request."
+    },
+    {
+     "id": "weak",
+     "title": "Your legs come first",
+     "rule": "Legs are your weak link, so they're trained twice a week on Lower A and B, plus calves three times a week, and they come first in those sessions. They sit at the top of the 12–16 weekly set range when you're recovering well, and on the last set of each leg lift you go one rep closer to failure than the block target: never below 1 rep in reserve on free weights, about 1 on leg machines. Upper body stays at maintenance.",
+     "finding": "Across meta-regressions, sets taken closer to failure built more muscle, while strength depended more on load (Robinson 2024). Exercises done first in a session gained the most strength, with growth similar whatever the order (Nunes 2021). Training a muscle twice a week grew it more than once a week (Schoenfeld 2016), and more weekly sets build more muscle with diminishing returns (Pelland 2024).",
+     "sources": [
+      {
+       "cite": "Robinson et al. 2024, Sports Med (meta-regressions)",
+       "q": "Robinson proximity to failure dose-response strength hypertrophy meta-regression 2024"
+      },
+      {
+       "cite": "Nunes et al. 2021, Eur J Sport Sci (meta-analysis)",
+       "q": "Nunes resistance exercise order muscular strength hypertrophy meta-analysis 2021"
+      },
+      {
+       "cite": "Schoenfeld, Ogborn & Krieger 2016, Sports Med",
+       "q": "Schoenfeld Ogborn Krieger 2016 resistance training frequency hypertrophy meta-analysis"
+      },
+      {
+       "cite": "Pelland et al. 2024, SportRxiv (meta-regression)",
+       "q": "Pelland resistance training dose-response weekly volume frequency hypertrophy strength"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Going one rep closer on the last set only is the coach's way of getting the benefit without wrecking recovery for the next leg day."
+    },
+    {
+     "id": "length",
+     "title": "Training legs in the stretch",
+     "rule": "Your leg exercises are picked and cued to load the muscles while they're stretched: full-depth hack squats and split squats, the seated leg curl rather than lying, deep knee bend at the bottom of leg extensions, and a 1–2 s pause at the bottom of calf raises. When the coach swaps an exercise, it prefers the variant that stretches the muscle more.",
+     "finding": "Over 12 weeks, seated leg curls (hamstrings stretched at the hip) grew the hamstrings more than lying leg curls. Leg extensions done in the deep, stretched part of the range grew the quadriceps more than the same work in the shortened part. Full-depth squats grew the glutes and adductors more than half squats.",
+     "sources": [
+      {
+       "cite": "Maeo et al. 2021, Med Sci Sports Exerc",
+       "q": "Maeo greater hamstrings muscle hypertrophy long versus short muscle lengths seated prone leg curl"
+      },
+      {
+       "cite": "Pedrosa et al. 2022, Eur J Sport Sci",
+       "q": "Pedrosa partial range of motion long muscle lengths leg extension hypertrophy"
+      },
+      {
+       "cite": "Kubo et al. 2019, Eur J Appl Physiol",
+       "q": "Kubo effects of squat training with different depths on lower limb muscle volumes"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Depth is always 'what you can control': never chase range through pain, especially with your hamstrings and back."
+    }
+   ]
+  },
+  {
+   "id": "strength",
+   "title": "Strength",
+   "items": [
+    {
+     "id": "phases",
+     "title": "Hypertrophy, strength and deload blocks",
+     "rule": "Your 12 weeks run in phases. Weeks 1–4 hypertrophy: 8–12 reps on the main lifts, 12–15 on isolation. Weeks 5–7 strength: hack squat, leg press, hip thrust, pull-ups, incline press, row and dips go to 6–8 reps with 3 minutes rest and 3 sets; everything else stays in its hypertrophy range. Week 8 deload. Weeks 9–11 hypertrophy, with your legs at the top of their weekly sets. Week 12 deload. Then it repeats: 3 strength, deload, 3 hypertrophy, deload. When the rep range changes, the app works out your new weight from your best recent set.",
+     "finding": "With the same number of sets, heavier sets (2–4 reps) built more squat strength and moderate sets (8–12) built more thigh muscle in trained men over 8 weeks (Schoenfeld 2016). Across 35 trials, planned changes in load and volume built more 1RM strength than a fixed plan, mainly in trained lifters, with no difference in muscle size (Moesgaard 2022). In 26 trained men, 3 weeks of heavy work before 5 weeks of hypertrophy work gave more quad growth and strength than 8 weeks of hypertrophy alone (Carvalho 2020).",
+     "sources": [
+      {
+       "cite": "Schoenfeld, Contreras, Vigotsky & Peterson 2016, J Sports Sci Med 15:715",
+       "q": "Schoenfeld differential effects heavy versus moderate loads strength hypertrophy resistance-trained men"
+      },
+      {
+       "cite": "Moesgaard et al. 2022, Sports Med 52:1647 (meta-analysis)",
+       "q": "Moesgaard effects of periodization strength muscle hypertrophy volume-equated meta-analysis"
+      },
+      {
+       "cite": "Carvalho et al. 2020, Res Sports Med 29:536",
+       "q": "Carvalho is stronger better strength phase followed by hypertrophy phase resistance-trained men"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Phases help strength more than size; the 6–8 rep strength range (rather than 2–4) is his choice, kinder on joints. The phase order and lengths are the coach's call. Set up 29 Oct at his request."
+    },
+    {
+     "id": "strvol",
+     "title": "Sets for strength",
+     "rule": "Key lifts get 3–4 working sets, twice a week for legs.",
+     "finding": "Strength also rises with weekly sets, but the returns flatten sooner than for muscle size (Pelland 2024). Medium to high weekly set counts beat low ones for strength (Ralston 2017).",
+     "sources": [
+      {
+       "cite": "Pelland et al. 2024, SportRxiv (meta-regression)",
+       "q": "Pelland resistance training dose-response weekly volume frequency hypertrophy strength"
+      },
+      {
+       "cite": "Ralston et al. 2017, Sports Med",
+       "q": "Ralston 2017 effect of weekly set volume on strength gain meta-analysis"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "e1rm",
+     "title": "Estimated 1RM",
+     "rule": "Strength is tracked as estimated 1RM (Epley formula), so heavier-for-fewer and lighter-for-more sets compare fairly. PRs and the ghost race use it.",
+     "finding": "Rep-based 1RM equations are reasonably accurate when sets are under about 10 reps and get less accurate with higher reps.",
+     "sources": [
+      {
+       "cite": "LeSuer et al. 1997, J Strength Cond Res",
+       "q": "LeSuer 1997 accuracy of prediction equations for estimating 1-RM performance"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "conc",
+     "title": "Lifting and running together",
+     "rule": "Runs and leg days sit on different days, never back to back with the long run, and never two sessions in one morning.",
+     "finding": "A meta-analysis of 43 studies found adding cardio did not reduce muscle growth or maximal strength. It slightly blunted explosive strength, mostly when both were done in the same session; separating them by 3+ hours removed that effect.",
+     "sources": [
+      {
+       "cite": "Schumann et al. 2022, Sports Med 52:601",
+       "q": "Schumann 2022 compatibility of concurrent aerobic and strength training skeletal muscle size function"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "inj",
+     "title": "Warm-ups and strength work prevent injury",
+     "rule": "Every session starts with its own warm-up, and calf, shoulder-care and core work are kept even when time is short.",
+     "finding": "Across 25 trials (26,610 people), strength training cut sports injuries to less than a third, while stretching showed no protective effect (Lauersen 2014). A review found warm-ups lowered injury risk in most studies (Fradkin 2010).",
+     "sources": [
+      {
+       "cite": "Lauersen, Bertelsen & Andersen 2014, Br J Sports Med",
+       "q": "Lauersen 2014 effectiveness of exercise interventions to prevent sports injuries meta-analysis"
+      },
+      {
+       "cite": "Fradkin, Zazryn & Smoliga 2010, J Strength Cond Res",
+       "q": "Fradkin 2010 effects of warming-up on physical performance systematic review"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "warmset",
+     "title": "Warm-up sets before lifting",
+     "rule": "Only compound lifts get a warm-up ramp: the first heavy lift for a muscle gets about 50% of today's working weight for 8 easy reps, then about 75% for 4, rounded to the plates. When the muscle is already warm from an earlier exercise you skip it, apart from one optional feel set on a heavy machine. Isolation lifts (curls, pushdowns, raises, face pulls, leg extension, calves) get no warm-up sets: the compounds before them have done that job. If you logged very sore legs that morning, a leg compound gets one extra easy set. Warm-up sets never count towards your weekly sets.",
+     "finding": "In 29 trained adults lifting their 10-rep max on the Smith bench press and 45° leg press, one warm-up set (75% of 10RM) or two (55% then 75%) did not meaningfully change reps, fatigue or total volume compared with no specific warm-up; skipping them saved about 2–5 minutes per exercise. For maximal single-rep efforts, a general warm-up plus specific sets beat specific sets alone on the leg press, so warm-ups matter more the heavier the load.",
+     "sources": [
+      {
+       "cite": "Enes et al. 2025, SportRxiv (crossover trial, preprint)",
+       "q": "Enes Schoenfeld specific warm-up protocols neuromuscular performance trained individuals"
+      },
+      {
+       "cite": "Abad et al. 2011, J Strength Cond Res",
+       "q": "Abad combination of general and specific warm-ups improves leg-press one repetition maximum"
+      }
+     ],
+     "grade": "limited",
+     "note": "Your working sets sit around 8–12 reps, so the coach keeps the ramp short: enough to groove the movement and check your knees and back, not enough to tire you."
+    },
+    {
+     "id": "order",
+     "title": "Big lifts first, even when a machine is taken",
+     "rule": "Your big leg lifts come first, while you're fresh. If a machine is taken: the coach's pick (planned that morning) or the best free alternative first, then 'do the next one first', and the end of the session only as a last resort. A lift done after 2+ sets for the same muscle is marked pre-tired: fewer reps there never hold back your next weight or lose a ghost race.",
+     "finding": "A review of exercise-order studies found the exercises done earlier in a session get more reps and more strength, and those done later lose reps to fatigue. A meta-analysis found strength gains were greatest for exercises done first, while muscle growth was similar whatever the order, as long as the work gets done.",
+     "sources": [
+      {
+       "cite": "Simão et al. 2012, Sports Med (review)",
+       "q": "Simao exercise order in resistance training Sports Medicine 2012"
+      },
+      {
+       "cite": "Nunes et al. 2021, Eur J Sport Sci (meta-analysis)",
+       "q": "Nunes resistance exercise order muscular strength hypertrophy meta-analysis 2021"
+      }
+     ],
+     "grade": "moderate",
+     "note": "So moving a lift later costs you reps on the day, not muscle: the coach just reads that session fairly."
+    }
+   ]
+  },
+  {
+   "id": "techniques",
+   "title": "Time-saving techniques",
+   "items": [
+    {
+     "id": "dropset",
+     "title": "Drop sets",
+     "rule": "Your own drop sets (the + Drop set button) are yours to add any day, on the last set of a machine or isolation lift: drop about 20–30% of the load straight away and go to 1–2 reps short of failure. Never on the main heavy lifts. Your coach tracks how they go and only builds them into your plan, as a 4-week trial, after you say yes; it suggests one when your sessions run long, a muscle is short of its weekly sets, or an isolation lift stalls.",
+     "finding": "A meta-analysis of 5 trials (142 people) found drop sets built similar muscle to traditional sets, and some drop-set protocols took about a half to a third of the time.",
+     "sources": [
+      {
+       "cite": "Sødal et al. 2023, Sports Med Open",
+       "q": "Sodal 2023 effects of drop sets on skeletal muscle hypertrophy systematic review meta-analysis"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Strength-specific benefits aren't shown, so drop sets are for muscle and time, not for your main strength lifts."
+    },
+    {
+     "id": "superset",
+     "title": "Supersets",
+     "rule": "Your own supersets (the Superset button) are yours to add any day: no rest between the two, then the longer of the two rests. Best for two exercises at the same station, and opposing muscles (e.g. curls with pushdowns) keep your volume up; two moves for the same muscle cut what you can lift. Your coach tracks how they go and only builds a pairing into your plan, as a 4-week trial, after you say yes.",
+     "finding": "A meta-analysis of 19 studies (313 people) found supersets kept total reps and volume similar while making sessions shorter and more efficient, with similar long-term strength and muscle gains. They felt harder (higher effort ratings and lactate). Opposing-muscle supersets kept volume best; pairing two moves for the same muscle reduced the volume you could lift.",
+     "sources": [
+      {
+       "cite": "Zhang, Weakley et al. 2025, Sports Med",
+       "q": "Zhang Weakley 2025 superset versus traditional resistance training prescriptions systematic review meta-analysis"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "giantset",
+     "title": "Giant sets (3+ exercises in a row)",
+     "rule": "On hold (your call, 23 Oct 2026): your coach won't suggest giant sets until you ask. If you do, they'd be accessory work at one station, on a quieter day off, never the main leg lifts.",
+     "finding": "In a crossover study of 14 men, tri-sets cut session time and improved training efficiency but raised effort, lactate and muscle-damage markers, and jump performance was still down 24 hours later, versus back to normal after traditional sets.",
+     "sources": [
+      {
+       "cite": "Weakley et al. 2017, Eur J Appl Physiol 117:1877",
+       "q": "Weakley 2017 effects of traditional superset and tri-set resistance training structures perceived intensity physiological responses"
+      }
+     ],
+     "grade": "limited",
+     "note": "Long-term results for giant sets aren't well studied; they cost more recovery, so they'd be a short trial at most."
+    }
+   ]
+  },
+  {
+   "id": "vo2",
+   "title": "VO2 max",
+   "items": [
+    {
+     "id": "int4x4",
+     "title": "4×4 intervals",
+     "rule": "From week 5, one session a week is 4 × 4 minutes hard at about 90–95% of max heart rate (165–174 bpm), with 3 minutes easy between, after a 10-minute warm-up. Lighter weeks drop to 3 intervals. Your watch checks it: aim for at least 8 of the 16 hard minutes at 165 bpm or more (heart rate takes a minute or two to climb in each rep). Under 5 minutes there on two sessions while it felt about right means push harder next time (more incline or resistance); if it felt too hard, it stays as it is.",
+     "finding": "In an 8-week trial, 4×4 intervals raised VO2 max by about 7% while long slow running and threshold running at the same total work didn't change it significantly (Helgerud 2007). A meta-analysis found intervals improve VO2 max more than continuous training (Milanović 2015).",
+     "sources": [
+      {
+       "cite": "Helgerud et al. 2007, Med Sci Sports Exerc 39:665",
+       "q": "Helgerud 2007 aerobic high-intensity intervals improve VO2max more than moderate training"
+      },
+      {
+       "cite": "Milanović, Sporiš & Weston 2015, Sports Med",
+       "q": "Milanovic 2015 effectiveness of high-intensity interval training HIT and continuous endurance training for VO2max improvements"
+      }
+     ],
+     "grade": "strong",
+     "note": "Helgerud's protocol is defined by reaching 90–95% of max heart rate in each rep; the 8-minute and 5-minute lines are the coach's way of reading that from your watch."
+    },
+    {
+     "id": "vo2life",
+     "title": "Why VO2 max is on your scorecard",
+     "rule": "VO2 max sits on the Longevity scorecard, and intervals are protected when the week gets cut.",
+     "finding": "In 122,007 adults who had treadmill tests, those with elite fitness had about 80% lower mortality than the least fit, and low fitness carried a risk comparable to or greater than smoking or diabetes.",
+     "sources": [
+      {
+       "cite": "Mandsager et al. 2018, JAMA Netw Open",
+       "q": "Mandsager 2018 association of cardiorespiratory fitness with long-term mortality"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Observational: fitter people live longer, but the study can't prove fitness alone causes it."
+    }
+   ]
+  },
+  {
+   "id": "endurance",
+   "title": "Endurance",
+   "items": [
+    {
+     "id": "polar",
+     "title": "Mostly easy, a little hard",
+     "rule": "Most cardio is easy (120–137 bpm, you can talk in full sentences), with one hard session a week: roughly an 80/20 split. Your watch checks it: an easy session should spend at least 80% of its time at 137 bpm or under. If two easy sessions in a row spend more than 20% above it, the next one is slowed down (lower bike resistance or pace; walk breaks are fine).",
+     "finding": "Elite endurance athletes do about 80% of their sessions at low intensity (Seiler 2010). In a 9-week trial with 48 trained athletes, this polarized mix raised VO2 peak about 12%, more than threshold-heavy or high-volume training (Stöggl & Sperlich 2014).",
+     "sources": [
+      {
+       "cite": "Seiler 2010, Int J Sports Physiol Perform",
+       "q": "Seiler 2010 what is best practice for training intensity and duration distribution in endurance athletes"
+      },
+      {
+       "cite": "Stöggl & Sperlich 2014, Front Physiol 5:33",
+       "q": "Stoggl Sperlich 2014 polarized training greater impact on key endurance variables"
+      }
+     ],
+     "grade": "moderate",
+     "note": "The 80% line is the coach's tolerance for warm-up and heart-rate drift, not a number from the studies."
+    },
+    {
+     "id": "longrun",
+     "title": "Building the long run",
+     "rule": "The long run builds from 30 to 60 minutes over 12 weeks, with shorter runs in weeks 4 and 8 and walk breaks allowed.",
+     "finding": "The popular \"no more than 10% a week\" rule didn't lower injuries in a trial of 532 novice runners. Gradual building with step-back weeks is sensible practice, but the exact rate isn't proven.",
+     "sources": [
+      {
+       "cite": "Buist et al. 2008, Am J Sports Med",
+       "q": "Buist 2008 no effect of a graded training program on the number of running-related injuries in novice runners"
+      }
+     ],
+     "grade": "coach"
+    },
+    {
+     "id": "hrtrend",
+     "title": "Easy-run heart rate",
+     "rule": "Your heart rate on easy cardio is charted by type; the same effort at a lower heart rate means your aerobic engine is growing.",
+     "finding": "A lower heart rate at the same submaximal workload is a standard, practical marker of improved aerobic fitness, as long as conditions like heat and fatigue are similar.",
+     "sources": [
+      {
+       "cite": "Buchheit 2014, Front Physiol 5:73",
+       "q": "Buchheit 2014 monitoring training status with HR measures do all roads lead to Rome"
+      }
+     ],
+     "grade": "moderate"
+    }
+   ]
+  },
+  {
+   "id": "readiness",
+   "title": "Readiness: HRV, heart rate, sleep",
+   "items": [
+    {
+     "id": "hrv",
+     "title": "HRV-guided training",
+     "rule": "Your 7-day rolling average of overnight HRV is compared with your own normal range (30-day average ± 0.5 SD, log-transformed). Below range trims the day; a single low morning only counts until you have 10 readings.",
+     "finding": "Rolling averages are more reliable than single mornings (Plews 2013). A meta-analysis comparing HRV-guided with fixed plans found better vagal HRV (SMD 0.50) and fewer people responding badly, with only a small, non-significant edge for VO2 max (SMD 0.13) and endurance performance (SMD 0.20) (Manresa-Rocamora 2021).",
+     "sources": [
+      {
+       "cite": "Plews et al. 2013, Sports Med",
+       "q": "Plews 2013 training adaptation and heart rate variability in elite endurance athletes opening the door to effective monitoring"
+      },
+      {
+       "cite": "Manresa-Rocamora et al. 2021, Int J Environ Res Public Health 18:10299",
+       "q": "Manresa-Rocamora 2021 heart rate variability-guided training meta-analysis"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "rhr",
+     "title": "Resting heart rate",
+     "rule": "Resting HR 5+ bpm over your baseline with a rising 7-day average trims the day; a jump of 8+ bpm in one morning is treated as possible illness and means a recovery day.",
+     "finding": "Resting heart rate on its own is a slow, noisy marker of fatigue: day-to-day swings of a few beats are normal, so only larger or sustained rises carry a signal.",
+     "sources": [
+      {
+       "cite": "Buchheit 2014, Front Physiol 5:73",
+       "q": "Buchheit 2014 monitoring training status with HR measures do all roads lead to Rome"
+      }
+     ],
+     "grade": "limited",
+     "note": "The 5 and 8 bpm cut-offs are the coach's call."
+    },
+    {
+     "id": "subj",
+     "title": "How you feel counts",
+     "rule": "Tired, very sore legs or high stress each count as a warning sign. \"Tired\" with good numbers is treated as a motivation dip: the 10-minute rule applies.",
+     "finding": "A systematic review found self-reported fatigue, soreness, mood and stress tracked training load more consistently than blood markers, heart rate or HRV.",
+     "sources": [
+      {
+       "cite": "Saw, Main & Gastin 2016, Br J Sports Med 50:281",
+       "q": "Saw Main Gastin 2016 monitoring the athlete training response subjective self-reported measures trump commonly used objective measures"
+      }
+     ],
+     "grade": "strong",
+     "note": "The 10-minute rule for motivation dips is the coach's call."
+    },
+    {
+     "id": "sleep",
+     "title": "Sleep",
+     "rule": "Under 6 hours trims the day. When a week averages under 7 hours or a sleep score under 60, sleep becomes the priority over extra training.",
+     "finding": "Across 69 studies, acute sleep loss cut exercise performance by about 7.6% on average. Waking earlier than usual hurt more than going to bed late, and performance dropped about 0.4% for every extra hour awake before training (Craven 2022). Extending sleep improved sprint speed and accuracy in athletes (Mah 2011).",
+     "sources": [
+      {
+       "cite": "Craven et al. 2022, Sports Med 52:2669",
+       "q": "Craven 2022 effects of acute sleep loss on physical performance systematic meta-analytical review"
+      },
+      {
+       "cite": "Mah et al. 2011, Sleep 34:943",
+       "q": "Mah 2011 effects of sleep extension on athletic performance basketball"
+      }
+     ],
+     "grade": "strong"
+    },
+    {
+     "id": "alcohol",
+     "title": "Drinks",
+     "rule": "5+ drinks the night before trims the session; 3–4 adds a heads-up only.",
+     "finding": "Alcohol after training (about 1.5 g per kg) reduced muscle protein synthesis by 24% even with protein, and 37% with carbohydrate (Parr 2014). Alcohol also lowers overnight HRV in a dose-dependent way (Pietilä 2018).",
+     "sources": [
+      {
+       "cite": "Parr et al. 2014, PLoS One 9:e88384",
+       "q": "Parr 2014 alcohol ingestion impairs maximal post-exercise rates of myofibrillar protein synthesis"
+      },
+      {
+       "cite": "Pietilä et al. 2018, JMIR Ment Health",
+       "q": "Pietila 2018 acute effect of alcohol intake on cardiovascular autonomic regulation during the first hours of sleep"
+      }
+     ],
+     "grade": "moderate",
+     "note": "The 3–4 and 5+ drink thresholds are the coach's call."
+    },
+    {
+     "id": "garmin",
+     "title": "Garmin and Strava scores",
+     "rule": "Training Readiness under 50, Body Battery under 30 or sleep score under 50 can trim a session, but never cancel one on their own. Strava's relative effort is treated the same way: it can flag a heavy week, never decide a session on its own.",
+     "finding": "These are proprietary scores with no published, peer-reviewed validation of their thresholds. They're built from HRV, sleep and load, which the coach also reads directly, so they're used as a tie-breaker only.",
+     "sources": [],
+     "grade": "coach"
+    }
+   ]
+  },
+  {
+   "id": "recovery",
+   "title": "Recovery",
+   "items": [
+    {
+     "id": "recov",
+     "title": "Muscle recovery map",
+     "rule": "3+ hard sets keep a muscle \"worked\" for 48 hours, or 72 hours if a set went within a rep of failure or the exercise is new to you. Soreness can slow the call but never makes it alone.",
+     "finding": "Sets taken to failure needed roughly 24–48 hours longer to recover strength and power (Morán-Navarro 2017). Unfamiliar exercises cause more damage the first time, and much less once repeated (the repeated-bout effect; McHugh 2003).",
+     "sources": [
+      {
+       "cite": "Morán-Navarro et al. 2017, Eur J Appl Physiol",
+       "q": "Moran-Navarro 2017 time course of recovery resistance training leading or not to failure"
+      },
+      {
+       "cite": "McHugh 2003, Scand J Med Sci Sports",
+       "q": "McHugh 2003 recent advances in the understanding of the repeated bout effect"
+      }
+     ],
+     "grade": "moderate",
+     "note": "It's an estimate from your logs, not a measurement."
+    },
+    {
+     "id": "cooldown",
+     "title": "Cool-down and stretching",
+     "rule": "The 6-minute cool-down is there for flexibility (hips, hamstrings, calves, your right shoulder). Do it straight after training or later in the day.",
+     "finding": "A review found active cool-downs do little for next-day performance, soreness or injury risk. Regular stretching does improve range of motion over weeks, which is why the cool-down stays.",
+     "sources": [
+      {
+       "cite": "Van Hooren & Peake 2018, Sports Med",
+       "q": "Van Hooren Peake 2018 do we need a cool-down after exercise"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "massage",
+     "title": "Massage and foam rolling",
+     "rule": "A sports massage may be suggested in lighter weeks if soreness was logged often; foam rolling before stretching when you report tightness.",
+     "finding": "A meta-analysis of 99 studies found massage was the most effective recovery method for soreness and perceived fatigue (Dupuy 2018). Foam rolling gave small short-term benefits for flexibility and soreness (Wiewelhove 2019).",
+     "sources": [
+      {
+       "cite": "Dupuy et al. 2018, Front Physiol 9:403",
+       "q": "Dupuy 2018 evidence-based approach for choosing post-exercise recovery techniques"
+      },
+      {
+       "cite": "Wiewelhove et al. 2019, Front Physiol 10:376",
+       "q": "Wiewelhove 2019 meta-analysis of the effects of foam rolling on performance and recovery"
+      }
+     ],
+     "grade": "moderate"
+    },
+    {
+     "id": "medit",
+     "title": "Bedtime meditation",
+     "rule": "A 3–5 minute guided session before bed, picked from how your head feels.",
+     "finding": "A meta-analysis found mindfulness meditation moderately improved sleep quality compared with non-specific controls (Rusch 2019). In a trial, 5 minutes a day of cyclic sighing improved mood and lowered breathing rate more than mindfulness meditation (Balban 2023).",
+     "sources": [
+      {
+       "cite": "Rusch et al. 2019, Ann N Y Acad Sci",
+       "q": "Rusch 2019 effect of mindfulness meditation on sleep quality systematic review meta-analysis"
+      },
+      {
+       "cite": "Balban et al. 2023, Cell Rep Med",
+       "q": "Balban 2023 brief structured respiration practices enhance mood and reduce physiological arousal"
+      }
+     ],
+     "grade": "moderate"
+    }
+   ]
+  },
+  {
+   "id": "longevity",
+   "title": "Longevity markers",
+   "items": [
+    {
+     "id": "grip",
+     "title": "Grip strength",
+     "rule": "Grip is tested at each 4-week check-in, and plate pinch, dead hangs and carries are kept in the plan.",
+     "finding": "In 139,691 adults across 17 countries, every 5 kg lower grip strength was linked to 16% higher all-cause mortality and 17% higher cardiovascular mortality.",
+     "sources": [
+      {
+       "cite": "Leong et al. 2015, Lancet 386:266",
+       "q": "Leong 2015 prognostic value of grip strength PURE study"
+      }
+     ],
+     "grade": "moderate",
+     "note": "Observational: grip is a marker of overall strength and health, not proof that training grip alone extends life."
+    },
+    {
+     "id": "carrytime",
+     "title": "Timed carries and holds",
+     "rule": "Carries, plate pinch and dead hangs are logged in seconds: time them on your watch or phone, and for per-hand holds log the weaker hand. Progression works like the rest: hit the top of the time range on every set and the weight goes up.",
+     "finding": "Grip strength is one of the strongest simple markers of long-term health in large cohort studies. There's no study comparing timed and measured-distance carries; timing just makes the dose repeatable in a busy gym where you can't walk a straight 30 m.",
+     "sources": [],
+     "grade": "coach",
+     "note": "The weaker hand sets the number so a left-right gap gets closed, not hidden."
+    }
+   ]
+  }
+ ]
+}
