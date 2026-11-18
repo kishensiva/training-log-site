@@ -5560,6 +5560,127 @@ try{
 })();
 }catch(e){console.error(e)}
 ;
+try{
+/* UX upgrade stage 1 (to-do item 23, from the Motion Demo he approved 18 Nov): the Today screen.
+   - A morning check-in sheet ("Morning, Kishen. How do you feel?") before Start, once a day, using the app's own check-in.
+   - One big Start button; Normal/Gym, Express, Log as planned and Skip move into an "Other options" sheet.
+   - Skip gets a 6-second Undo bar; a few notices show only once.
+   Built on top of the existing screen: every option still runs the app's own buttons, so nothing about logging changes. */
+(function(){
+  const css=`.uxdim{position:fixed;inset:0;z-index:60;background:rgba(10,12,18,.42);opacity:0;pointer-events:none;transition:opacity .3s cubic-bezier(.23,1,.32,1)}
+.uxdim.on{opacity:1;pointer-events:auto}
+.uxsh{position:fixed;left:0;right:0;bottom:0;z-index:61;max-width:560px;margin:0 auto;box-sizing:border-box;background:var(--card);color:var(--fg);border-radius:26px 26px 0 0;padding:10px max(18px,env(safe-area-inset-right,0px)) calc(22px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px;box-shadow:0 -12px 40px rgba(0,0,0,.22);transform:translateY(105%);visibility:hidden;transition:transform .42s cubic-bezier(.23,1,.32,1)}
+.uxsh.on{transform:none;visibility:visible}
+.uxsh.off{transform:translateY(105%);transition:transform .26s cubic-bezier(.4,0,1,1),visibility 0s .26s;visibility:hidden}
+.uxsh:focus{outline:none}
+.uxsh .hd{width:40px;height:5px;border-radius:3px;background:var(--line);align-self:center}
+.uxsh .kk{font-size:14px;color:var(--muted);margin:2px 0 -10px}
+.uxsh h2{margin:0;font-size:26px;line-height:1.15;font-weight:700;text-wrap:balance;text-transform:none;letter-spacing:0}
+.uxg2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.uxg2 button{min-height:64px;border-radius:18px;font-size:18px;font-weight:600;background:var(--soft);color:var(--fg);border:1.5px solid transparent;box-shadow:none;text-transform:none;letter-spacing:0;transition:transform .12s ease-out,background-color .15s,border-color .15s}
+.uxg2 button.on,.uxg2 button[aria-pressed="true"]{background:var(--card);border-color:var(--fg)}
+.uxg2 button:active{transform:scale(.97)}
+.uxrow{display:flex;align-items:center;gap:12px;min-height:58px;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;color:var(--fg);font-size:17px;padding:0;box-shadow:none;text-transform:none;letter-spacing:0;border-radius:0}
+.uxrow:first-child{border-top:0}
+.uxrow .ic{width:38px;height:38px;border-radius:12px;background:var(--soft);display:grid;place-items:center;font-size:17px;flex:none}
+.uxrow .tx{flex:1;min-width:0}.uxrow small{display:block;color:var(--muted);font-size:13px}
+.uxlink{background:none;border:0;box-shadow:none;color:var(--muted);font-size:15px;text-decoration:underline;text-underline-offset:3px;min-height:40px;align-self:center;text-transform:none;letter-spacing:0}
+.uxseg{display:grid;grid-template-columns:1fr 1fr;background:var(--soft);border-radius:14px;padding:3px;gap:3px}
+.uxseg button{padding:10px 4px;border-radius:11px;font-weight:600;font-size:14.5px;color:var(--muted);background:transparent;border:0;box-shadow:none;min-height:44px;text-transform:none;letter-spacing:0;transition:background-color .2s,color .2s}
+.uxseg button[aria-pressed="true"]{background:var(--card);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.uxlab{font-size:13px;color:var(--muted);margin:0 0 -6px}
+#session .hero .uxunder{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px;color:var(--hero-muted,rgba(255,255,255,.78));padding:0 4px}
+#session .hero .uxunder b{color:#fff;font-weight:600}
+#session .hero .uxunder button{background:none;border:0;box-shadow:none;color:#fff;font-weight:600;text-decoration:underline;text-underline-offset:3px;min-height:40px;font-size:15px;padding:0;text-transform:none;letter-spacing:0;width:auto}
+#session .hero.uxon .modepick,#session .hero.uxon #expressW,#session .hero.uxon #expressR,#session .hero.uxon .hlinks{display:none!important}
+#session .hero .uxfeel{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;padding:6px 12px 6px 10px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:14px;font-weight:600;min-height:34px;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto}
+#session .hero .uxfeel i{width:9px;height:9px;border-radius:50%;background:#5ee39a}
+#session .hero .uxfeel i.w{background:#ffc35c}#session .hero .uxfeel i.r{background:#ff8b8b}
+.uxsnack{position:fixed;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:62;max-width:500px;margin:0 auto;background:#1d1f24;color:#fff;border-radius:16px;min-height:56px;padding:0 6px 0 16px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.3);animation:uxup .38s cubic-bezier(.23,1,.32,1) both}
+.uxsnack.out{animation:uxdown .22s ease-in both}
+.uxsnack span{flex:1;font-size:15px}.uxsnack button{color:#8fb3ff;font-weight:700;min-height:44px;padding:0 12px;background:none;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto}
+.uxsnack i{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#8fb3ff;transform-origin:left;animation:uxbar 6s linear both}
+@keyframes uxup{from{opacity:0;transform:translateY(18px)}}@keyframes uxdown{to{opacity:0;transform:translateY(14px)}}@keyframes uxbar{to{transform:scaleX(0)}}
+@media (prefers-reduced-motion:reduce){.uxsh,.uxdim{transition:none}.uxsnack,.uxsnack i{animation:none}}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const FEEL={good:['','Good','train as planned'],meh:['w','Meh','warm up, then decide'],tired:['w','Tired','Express is the smart call'],wrecked:['r','Wrecked','recovery day instead']};
+  const $q=s=>document.querySelector(s);
+  const dim=document.createElement('div');dim.className='uxdim';document.body.appendChild(dim);
+  function mk(id,label){const s=document.createElement('div');s.className='uxsh';s.id=id;s.tabIndex=-1;s.setAttribute('role','dialog');s.setAttribute('aria-modal','true');s.setAttribute('aria-label',label);document.body.appendChild(s);return s}
+  const CI=mk('uxCheck','Morning check-in'),OP=mk('uxOpts','Other options');
+  let openSh=null,back=null;
+  function sheet(el,on){if(on){if(openSh&&openSh!==el)sheet(openSh,false);back=document.activeElement;openSh=el;el.classList.remove('off');void el.offsetWidth;el.classList.add('on');dim.classList.add('on');setTimeout(()=>{try{el.focus({preventScroll:true})}catch(e){}},60)}
+    else{el.classList.remove('on');el.classList.add('off');dim.classList.remove('on');if(openSh===el)openSh=null;try{back&&back.focus&&back.focus({preventScroll:true})}catch(e){}}}
+  dim.onclick=()=>{if(openSh)sheet(openSh,false)};
+  addEventListener('keydown',e=>{if(e.key==='Escape'&&openSh)sheet(openSh,false)});
+  const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+  const todayK=()=>iso(today);
+  const isToday=()=>cur&&!cur.practice&&cur.date===todayK()&&mode==='preview';
+  const startBtn=()=>$q('#session .hero #startW')||$q('#session .hero #startR');
+  const hello=()=>{const h=new Date().getHours();return h<12?'Morning':h<18?'Afternoon':'Evening'};
+  function feelNow(){return typeof ready==='object'&&ready?ready.quick:null}
+  const ciDone=()=>!!(window.__uxNoCheckin||store.get('uxCI:'+todayK()));
+
+  /* check-in sheet */
+  function renderCI(){const f=feelNow();
+    CI.innerHTML='<div class="hd"></div><p class="kk">'+esc((cur&&cur.title)||'Today')+' today</p><h2>'+hello()+', Kishen.<br>How do you feel?</h2>'+
+      '<div class="uxg2">'+Object.keys(FEEL).map(k=>'<button type="button" data-uxf="'+k+'" aria-pressed="'+(f===k)+'">'+FEEL[k][1]+'</button>').join('')+'</div>'+
+      '<div><button type="button" class="uxrow" data-uxg="1"><span class="ic" aria-hidden="true">⌚</span><span class="tx">Add Garmin numbers<small>Readiness · HRV · resting HR</small></span><span aria-hidden="true">›</span></button></div>'+
+      '<button type="button" class="uxlink" data-uxl="1">Not now</button>'}
+  CI.addEventListener('click',e=>{const b=e.target.closest('[data-uxf]');
+    if(b){const v=b.dataset.uxf;b.classList.add('on');try{navigator.vibrate&&navigator.vibrate(10)}catch(_){}
+      setTimeout(()=>{sheet(CI,false);if(feelNow()!==v){const c=$q('#q-quick button[data-v="'+v+'"]');if(c)c.click()}store.set('uxCI:'+todayK(),'1');try{renderSession()}catch(_){}},170);return}
+    if(e.target.closest('[data-uxg]')){sheet(CI,false);store.set('uxCI:'+todayK(),'1');setTimeout(()=>{const g=$('gnudge');if(g&&!g.hidden)g.click();else{const r=$('ready');r&&r.scrollIntoView({block:'start',behavior:'smooth'})}},260);return}
+    if(e.target.closest('[data-uxl]')){sheet(CI,false);store.set('uxCI:'+todayK(),'1')}});
+  function openCI(){renderCI();sheet(CI,true)}
+
+  /* other options sheet */
+  function renderOP(){const lift=!!$q('#session .hero #startW'),ex=$q('#session .hero #expressW')||$q('#session .hero #expressR'),gymOn=!!$q('#session [data-logmode="gym"][aria-pressed="true"]');
+    let h='<div class="hd"></div><h2 style="font-size:22px">Other options</h2><div>';
+    if(ex)h+='<button type="button" class="uxrow" data-uxo="express"><span class="ic" aria-hidden="true">⚡</span><span class="tx">'+esc(ex.textContent.replace(/^Tired\?\s*/,''))+'<small>Short on time or energy. Streak stays safe</small></span></button>';
+    h+='<button type="button" class="uxrow" data-uxo="feel"><span class="ic" aria-hidden="true">☺</span><span class="tx">'+(feelNow()?'Change how you feel':'How do you feel?')+'</span></button>';
+    if($q('#session .hero #quickW')||$q('#session .hero #logR'))h+='<button type="button" class="uxrow" data-uxo="log"><span class="ic" aria-hidden="true">✓</span><span class="tx">Already done? Log as planned</span></button>';
+    if($q('#session .hero #skipW')||$q('#session .hero #skipR0'))h+='<button type="button" class="uxrow" data-uxo="skip"><span class="ic" aria-hidden="true">⏭</span><span class="tx">Skip today</span></button>';
+    h+='</div>';
+    if(lift)h+='<p class="uxlab">Log your sets</p><div class="uxseg"><button type="button" data-uxm="list" aria-pressed="'+!gymOn+'">Normal · all at once</button><button type="button" data-uxm="gym" aria-pressed="'+gymOn+'">Gym · one at a time</button></div>';
+    OP.innerHTML=h}
+  OP.addEventListener('click',e=>{const o=e.target.closest('[data-uxo]');
+    if(o){const a=o.dataset.uxo;sheet(OP,false);
+      if(a==='feel'){setTimeout(openCI,240);return}
+      const pick=s=>{const b=$q('#session .hero '+s);if(b)b.click();return!!b};
+      if(a==='express'){pick('#expressW')||pick('#expressR');return}
+      if(a==='log'){pick('#quickW')||pick('#logR');return}
+      if(a==='skip'){const t=(cur&&cur.title||'Today').replace(/ · Express$/,'');if(pick('#skipW')||pick('#skipR0'))setTimeout(()=>snack(t+' skipped',()=>{const u=$('editW');if(u&&/Undo skip/.test(u.textContent))u.click()}),250);return}
+      return}
+    const m=e.target.closest('[data-uxm]');if(m){const b=$q('#session [data-logmode="'+m.dataset.uxm+'"]');if(b&&b.getAttribute('aria-pressed')!=='true')b.click();setTimeout(()=>{renderOP()},60)}});
+
+  /* undo bar */
+  let snT=null;
+  function snack(text,onUndo){document.querySelectorAll('.uxsnack').forEach(x=>x.remove());clearTimeout(snT);
+    const d=document.createElement('div');d.className='uxsnack';d.setAttribute('role','status');d.innerHTML='<span></span><button type="button">Undo</button><i></i>';d.querySelector('span').textContent=text;document.body.appendChild(d);
+    const close=()=>{d.classList.add('out');setTimeout(()=>d.remove(),230)};d.querySelector('button').onclick=()=>{clearTimeout(snT);close();onUndo&&onUndo()};snT=setTimeout(close,6000)}
+
+  /* notices that only need saying once */
+  const ONCE=[/^Screen stays on/];
+  try{const t0=toast;toast=function(t){const i=ONCE.findIndex(r=>r.test(String(t)));if(i>=0){if(store.get('uxOnce:'+i))return;store.set('uxOnce:'+i,'1')}return t0.apply(this,arguments)}}catch(e){}
+
+  /* the hero: one Start, the mode line and Other options under it, the feel pill above the plan */
+  function hero(){if(!isToday())return;const s=startBtn();if(!s)return;const h=s.closest('.hero');if(!h||h.classList.contains('uxon'))return;h.classList.add('uxon');
+    const lift=s.id==='startW',gymOn=!!h.querySelector('[data-logmode="gym"][aria-pressed="true"]');
+    const u=document.createElement('div');u.className='uxunder';u.innerHTML='<span>'+(lift?'Logging in <b>'+(gymOn?'Gym mode':'Normal view')+'</b>':'&nbsp;')+'</span><button type="button" data-uxopen="1">Other options</button>';
+    s.insertAdjacentElement('afterend',u);u.querySelector('[data-uxopen]').onclick=()=>{renderOP();sheet(OP,true)};
+    const f=feelNow();if(f&&FEEL[f]){const p=document.createElement('button');p.type='button';p.className='uxfeel';p.innerHTML='<i class="'+FEEL[f][0]+'"></i>Feeling '+FEEL[f][1].toLowerCase()+' · <u>'+FEEL[f][2]+'</u>';p.onclick=openCI;
+      const anchor=h.querySelector('.plantg')||s;anchor.insertAdjacentElement('beforebegin',p)}
+    /* Start asks how he feels first, once a day */
+    s.addEventListener('click',e=>{if(feelNow()||ciDone())return;e.preventDefault();e.stopImmediatePropagation();openCI()},true)}
+  function auto(){if(!isToday()||feelNow()||ciDone()||openSh)return;if(typeof view!=='undefined'&&view!=='today')return;const s=startBtn();if(!s)return;
+    clearTimeout(auto._t);auto._t=setTimeout(()=>{if(!feelNow()&&!ciDone()&&isToday()&&!openSh&&startBtn())openCI()},700)}
+  const rs=renderSession;renderSession=function(){const r=rs.apply(this,arguments);try{hero();auto()}catch(e){}return r};
+  window.UX1={openCI,openOP:()=>{renderOP();sheet(OP,true)},snack};
+  try{if(cur)renderSession()}catch(e){}
+})();
+}catch(e){console.error(e)}
+;
 const APP_NAME='kishen',APP_VER='k202';
 try{
 /* ===== Reliability (18 Nov 2026, plan step 2), shared by both apps =====
