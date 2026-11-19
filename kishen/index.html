@@ -5491,8 +5491,8 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
      const big=ops.filter(o=>['remove','swap','add','order'].includes(o.op)).length,small=ops.every(o=>ODY_SMALL.has(o.op))||(k===odyK()&&big===1&&ops.length<=3&&!ops.some(o=>o.op==='order'));
      const doIt=async()=>{const id=await twAdd(k,ops,sum);await odyTell(sum+' ('+odyDay(k)+')',k,ops);odyRefresh();add(lines,async()=>{await twUndo(k,id);await odyTell('undid: '+sum+' ('+odyDay(k)+')',k,[]);odyRefresh()});return{applied:true,date:k,changes:lines.map(l=>l[1])}};
      if(small&&ops.length<=4)return doIt();return preview('Change '+odyDay(k)+'?',lines.map(l=>l[1]),'',doIt)}},
-  {name:'change_day',description:'Bigger day changes, always shown to him as a preview to Apply: move (swap a session with another day in this Monday to Sunday week, from today on), cancel (reason recovery: mobility and a walk instead; reason skip: logged as skipped), travel (one or more days become travel days).',
-   inputSchema:{type:'object',properties:{action:{type:'string',enum:['move','cancel','travel']},date:{type:'string',description:'YYYY-MM-DD, default today'},to:{type:'string',description:'move: target YYYY-MM-DD'},reason:{type:'string',enum:['recovery','skip']},dates:{type:'array',items:{type:'string'}},why:{type:'string'}},required:['action']},
+  {name:'change_day',description:'Bigger day changes, always shown to him as a preview to Apply: move (swap a session with another day in this Monday to Sunday week, from today on), cancel (reason recovery: mobility and a walk instead; reason skip: logged as skipped), travel (one or more days become travel days), restore (he changed his mind: bring back the full planned session for that day, undoing a recovery day, a skip or a travel day made in the chat, a Recovery call, and Express; his other tweaks such as weights stay). Use restore whenever he asks to bring the workout back, even in a later conversation.',
+   inputSchema:{type:'object',properties:{action:{type:'string',enum:['move','cancel','travel','restore']},date:{type:'string',description:'YYYY-MM-DD, default today'},to:{type:'string',description:'move: target YYYY-MM-DD'},reason:{type:'string',enum:['recovery','skip']},dates:{type:'array',items:{type:'string'}},why:{type:'string'}},required:['action']},
    async execute(a){dbOk();const act=String(a.action||'');
      if(act==='move'){const ks=odyDate(a.date),kd=odyDate(a.to),s=parse(ks),d=parse(kd);if(ks===kd)throw new Error('Pick a different day.');
        if(iso(wkStart(s))!==iso(wkStart(d)))throw new Error('Moves stay inside this Monday to Sunday week.');if(!mvCanSrc(s))throw new Error(odyDay(ks)+' has no session that can move (rest day, or already done or started).');if(!mvCanDst(s,d))throw new Error(odyDay(kd)+' can\'t take it (already done or started, or too late today).');
@@ -5501,6 +5501,26 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
          const sa=odySnap(ks),sb=odySnap(kd);await mvWrite(s,b1,mvLbl(d),mvLbl(d));await mvWrite(d,a1,mvLbl(s),mvLbl(s));
          mvTell('Moved in the app (Odysseus): '+ta+' '+mvLbl(s)+' → '+mvLbl(d)+(b1==='S'?' ('+mvLbl(s)+' is now a rest day)':'; '+tb+' '+mvLbl(d)+' → '+mvLbl(s))+'. Please move the calendar events to match.',[{from:ks,to:kd,key:a1}].concat(b1==='S'?[]:[{from:kd,to:ks,key:b1}]));
          odyRefresh();add(lines,async()=>{await odyPut(ks,sa);await odyPut(kd,sb);mvTell('Put back in the app (Odysseus): '+mvLbl(s)+' and '+mvLbl(d)+' are back to the original plan. Please move the calendar events back.',[{date:ks,key:mvBaseKey(s)},{date:kd,key:mvBaseKey(d)}]);odyRefresh()});return{applied:true}})}
+     if(act==='restore'){const k=odyDate(a.date),l=logs[k],d=parse(k);
+       if(l&&['done','partial','in_progress'].includes(l.status))throw new Error('That session is already '+(l.status==='in_progress'?'started':'logged')+'.');
+       if(l&&l.status==='recovery')throw new Error('You already logged '+odyDay(k)+' as a recovery day, so it is done. Tell me if you want to train as well and I can add it.');
+       if(l&&l.status==='skipped'&&l.skippedBy!=='chat')throw new Error(odyDay(k)+' was skipped in the app itself; tap the day in the calendar to undo it.');
+       const t=ODY.tw[k],en=(t&&Array.isArray(t.entries)?t.entries.slice():[]),isOff=e=>(e.ops||[]).some(o=>o.op==='recovery'||o.op==='travel');
+       const keep=en.filter(e=>!isOff(e)),dropped=en.length-keep.length,skip=!!(l&&l.status==='skipped'),isToday=k===iso(today)&&iso(sel)===k;
+       const rec=isToday&&verdictOf(ready)==='recover';
+       const before=buildSession(d),planned=String((effPlan(d)||{}).title||'the planned session').replace(/ · Express$/,'');
+       const lgx=!!(l&&l.express&&l.status==='open');
+       if(!dropped&&!skip&&!rec&&!lgx&&!(before&&before.express))throw new Error(odyDay(k)+' is already the full planned session ('+planned+').');
+       const line=['EDIT',odyDay(k)+': back to '+planned];
+       return preview('Bring back '+planned+' on '+odyDay(k)+'?',[line[1]].concat(dropped||skip?['Recovery, skip or travel from the chat undone.']:[]).concat(rec?['Your call goes to Go full.']:[]),'',async()=>{
+         const sn=odySnap(k),ov0=isToday?ready.override:undefined;
+         if(dropped)await twWrite(k,keep);
+         if(skip){const n={...l,status:'open'};delete n.skippedBy;if(n.note==='Skipped (Odysseus)')delete n.note;await db.doc('log/'+k).set(n)}
+         if(rec){ready.override='go';readyBusy=true;await saveReady(k);try{showVerdict()}catch(_){}}
+         if(lgx){const L2=logs[k]||l,nl={...L2,express:false,title:String(L2.title||'').replace(/ · Express$/,'')};logs[k]=nl;await db.doc('log/'+k).set(nl)}   /* an Express he tapped earlier, saved on the day's log */
+         {const s2=buildSession(d);if(s2&&s2.express){const cur2=ODY.tw[k],e2=(cur2&&Array.isArray(cur2.entries)?cur2.entries.slice():keep.slice());e2.push({id:odyId(),at:new Date().toISOString(),by:'chat',summary:'Back to the full session',ops:[{op:'full'}]});await twWrite(k,e2)}}
+         await odyTell(line[1]+' (he changed his mind)',k,[{op:'restore'}]);odyRefresh();
+         add([line],async()=>{await twWrite(k,en);await odyPut(k,sn);if(isToday){if(ov0)ready.override=ov0;else delete ready.override;readyBusy=true;await saveReady(k);try{showVerdict()}catch(_){}}await odyTell('undid: '+line[1],k,[]);odyRefresh()});return{applied:true,date:k,session:planned}})}
      if(act==='cancel'){const k=odyDate(a.date);odyOpenDay(k);const p=effPlan(parse(k));if(p.type==='rest'||p.optional)throw new Error(odyDay(k)+' is already a rest day.');const why=String(a.why||'').slice(0,200),rec=a.reason!=='skip';
        const line=rec?['CANCEL',odyDay(k)+': '+p.title+' → recovery (mobility + walk)']:['CANCEL',odyDay(k)+': '+p.title+' skipped'];
        return preview(rec?'Make '+odyDay(k)+' a recovery day?':'Skip '+p.title+' on '+odyDay(k)+'?',[line[1]].concat(rec?['Tap Done on the recovery card when the mobility and walk are done.']:['It counts as skipped. Your coach rebalances the week.']),'',async()=>{
