@@ -385,6 +385,99 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   if ('serviceWorker' in navigator) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}) });
 })();
 
+</script><script>
+/* Phone notifications (19 Nov 2026, Kishen's call): today's plan at 6:45 am and the weekly recap on Sunday evening.
+   The database's own scheduler sends them (functions/push, private.morning_push / weekly_push). This part:
+   - asks once, with a small card on Today ("Turn on" / "Not now", which waits a week before asking again);
+   - keeps this phone's subscription in the app's own locked data (push/<id>; the endpoint is useless without the
+     server's private key);
+   - adds a Notifications card under Progress → Coach with a switch for each kind;
+   - opens Progress → Coach when a weekly recap is tapped (?open=prog).
+   Kishen's app only for now. */
+(function () {
+  const APP = window.WEB_APP, VAPID = 'BHkoprFoefKte0t8KQWJ9t9q1FRBZboLuCiE8Dfi7Fd5NjpALfHlq5xsfOvIC0hXGND1IQRbsyQNYhNQUcyDlSM';
+  if (APP !== 'kishen') return;
+  const OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const ls = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} } };
+  const KINDS = [['morning', 'Morning plan', 'Today’s session at 6:45 am'], ['weekly', 'Weekly recap', 'Sunday at 8:15 pm']];
+  const key = () => { const s = VAPID.replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(s + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0)) };
+  const db = () => window.claude.use('db');
+  async function sid(s) { const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s.endpoint))); return 'p' + Array.from(h.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('') }
+  async function sub() { if (!OK) return null; try { return await (await navigator.serviceWorker.ready).pushManager.getSubscription() } catch (e) { return null } }
+  let prefs = null;   /* this phone's switches, from push/<id> */
+  async function load() { const s = await sub(); if (!s || Notification.permission !== 'granted') { prefs = null; return null }
+    const d = await db(); if (!d) return null; const id = await sid(s);
+    try { const g = await d.doc('push/' + id).get(); prefs = g.exists ? g.data() : null } catch (e) {}
+    if (!prefs) { prefs = await save(s) } return prefs }
+  async function save(s) { const d = await db(); if (!d) throw new Error('offline'); const j = s.toJSON(), id = await sid(s);
+    const v = { endpoint: j.endpoint, keys: j.keys, on: true, morning: true, weekly: true, ua: navigator.userAgent.slice(0, 120), at: new Date().toISOString() };
+    await d.doc('push/' + id).set(v); return v }
+  async function turnOn() {
+    const p = await Notification.requestPermission(); if (p !== 'granted') return false;
+    const r = await navigator.serviceWorker.ready; let s = await r.pushManager.getSubscription();
+    if (!s) s = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key() });
+    prefs = await save(s); return true }
+  async function setKind(k, on) { const s = await sub(); if (!s) return; const d = await db(); await d.doc('push/' + await sid(s)).update({ [k]: on }); prefs = Object.assign({}, prefs, { [k]: on }) }
+  const tell = t => { try { toast(t) } catch (e) {} };
+
+  const css = `.npush{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:58;max-width:520px;margin:0 auto;background:var(--card);color:var(--fg);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 18px 40px -14px rgba(0,0,0,.55),0 0 0 1px var(--line);animation:npin .38s cubic-bezier(.23,1,.32,1) both}
+.npush.out{animation:npout .2s ease-in both}
+.npush .t{display:flex;gap:12px;align-items:flex-start}.npush .ic{width:40px;height:40px;border-radius:12px;background:var(--soft);display:grid;place-items:center;font-size:19px;flex:none}
+.npush b{display:block;font-size:16px;line-height:1.3}.npush p{margin:2px 0 0;font-size:14px;line-height:1.4;color:var(--muted);text-wrap:pretty}
+.npush .r{display:flex;gap:8px}.npush button{flex:1;min-height:46px;border-radius:999px;font:600 15px var(--body,inherit);border:0;background:var(--soft);color:var(--fg);text-transform:none;letter-spacing:0;box-shadow:none;transition:transform .12s ease-out}
+.npush button:active{transform:scale(.97)}.npush button.go{background:var(--fg);color:var(--bg)}
+.nprow{display:flex;align-items:center;gap:12px;min-height:56px;border-top:1px solid var(--line)}.nprow:first-of-type{border-top:0}
+.nprow .tx{flex:1;min-width:0;font-size:15px}.nprow small{display:block;color:var(--muted);font-size:13px}
+.npsw{appearance:none;-webkit-appearance:none;width:48px;height:28px;border-radius:999px;background:var(--line);position:relative;flex:none;margin:0;cursor:pointer;transition:background-color .2s ease}
+.npsw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.23,1,.32,1)}
+.npsw:checked{background:var(--accent)}.npsw:checked::after{transform:translateX(20px)}
+.nprow:focus-within{outline:none}.npsw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#npcard .msg{margin:0}#npcard .npgo{margin-top:4px;min-height:46px;border-radius:999px;border:0;background:var(--fg);color:var(--bg);font:600 15px var(--body,inherit);text-transform:none;letter-spacing:0}
+@keyframes npin{from{opacity:0;transform:translateY(16px)}}@keyframes npout{to{opacity:0;transform:translateY(10px)}}
+@media (prefers-reduced-motion:reduce){.npush,.npush.out{animation:none}.npsw,.npsw::after{transition:none}}`;
+  const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+
+  /* the one-time offer on Today */
+  function offer() {
+    if (!OK || Notification.permission !== 'default' || document.querySelector('.npush')) return;
+    if (Date.now() - (+ls.get('npLater') || 0) < 7 * 864e5) return;
+    if ((typeof view !== 'undefined' && view !== 'today') || document.querySelector('.uxsh.on,.stvp,#wsg') || (typeof mode !== 'undefined' && mode === 'live')) { setTimeout(offer, 8000); return }
+    const c = document.createElement('div'); c.className = 'npush'; c.setAttribute('role', 'dialog'); c.setAttribute('aria-label', 'Notifications');
+    c.innerHTML = '<div class="t"><span class="ic" aria-hidden="true">🔔</span><div><b>Your plan on your lock screen</b><p>Today’s session at 6:45 am, and your week’s recap on Sunday evening. Nothing else.</p></div></div><div class="r"><button type="button">Not now</button><button type="button" class="go">Turn on</button></div>';
+    const [later, go] = c.querySelectorAll('button');
+    const bye = () => { c.classList.add('out'); setTimeout(() => c.remove(), 210) };
+    later.onclick = () => { ls.set('npLater', String(Date.now())); bye() };
+    go.onclick = async () => { go.textContent = 'Turning on…'; go.disabled = true;
+      try { const on = await turnOn(); bye(); if (on) { tell('Notifications on. First one tomorrow at 6:45 am'); card() } else { ls.set('npLater', String(Date.now())); card() } }
+      catch (e) { go.disabled = false; go.textContent = 'Turn on'; tell('Couldn’t turn them on. Check your connection and try again') } };
+    document.body.appendChild(c);
+  }
+
+  /* the switches under Progress → Coach */
+  async function card() {
+    const host = document.getElementById('view-prog'); if (!host || !OK) return;
+    let c = document.getElementById('npcard');
+    if (!c) { c = document.createElement('section'); c.className = 'card'; c.id = 'npcard'; c.dataset.pg = 'coach'; c.setAttribute('aria-labelledby', 'nph'); host.appendChild(c) }
+    const perm = Notification.permission; if (perm === 'granted') await load();
+    let h = '<h2 id="nph">Notifications</h2>';
+    if (perm === 'denied') h += '<p class="msg">Notifications are blocked for this app. To allow them: your phone’s Settings → Apps → Training Log → Notifications.</p>';
+    else if (perm !== 'granted' || !prefs) h += '<p class="msg">Today’s session at 6:45 am and your weekly recap on Sunday evening, on your lock screen.</p><button type="button" class="npgo">Turn on notifications</button>';
+    else h += '<div>' + KINDS.map(([k, t, s]) => '<label class="nprow"><span class="tx">' + t + '<small>' + s + '</small></span><input type="checkbox" class="npsw" role="switch" data-np="' + k + '"' + (prefs[k] !== false ? ' checked' : '') + '></label>').join('') + '</div>';
+    c.innerHTML = h;
+    const g = c.querySelector('.npgo'); if (g) g.onclick = async () => { g.disabled = true; try { if (await turnOn()) tell('Notifications on') } catch (e) { tell('Couldn’t turn them on. Try again') } card() };
+    c.querySelectorAll('[data-np]').forEach(x => x.onchange = async () => { const k = x.dataset.np, on = x.checked;
+      try { await setKind(k, on); tell((k === 'morning' ? 'Morning plan ' : 'Weekly recap ') + (on ? 'on' : 'off')) } catch (e) { x.checked = !on; tell('Couldn’t save that. Try again') } });
+  }
+
+  db().then(d => { if (!d) return;
+    card();
+    /* a tapped weekly recap opens Progress → Coach */
+    try { const q = new URLSearchParams(location.search); if (q.get('open') === 'prog') { history.replaceState(null, '', location.pathname); setTimeout(() => { try { setPT('coach'); setView('prog') } catch (e) {} }, 600) } } catch (e) {}
+    setTimeout(offer, 5000);
+  });
+  window.NPUSH = { offer, card, turnOn };
+})();
+
 </script></head><body>
 <title>Kishen's Training Log</title>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -5661,7 +5754,7 @@ try{
     if($q('#session .hero #quickW')||$q('#session .hero #logR'))h+='<button type="button" class="uxrow" data-uxo="log"><span class="ic" aria-hidden="true">✓</span><span class="tx">Already done? Log as planned</span></button>';
     if($q('#session .hero #skipW')||$q('#session .hero #skipR0'))h+='<button type="button" class="uxrow" data-uxo="skip"><span class="ic" aria-hidden="true">⏭</span><span class="tx">Skip today</span></button>';
     h+='</div>';
-    if(lift)h+='<p class="uxlab">Log your sets</p><div class="uxseg"><button type="button" data-uxm="list" aria-pressed="'+!gymOn+'">Normal · all at once</button><button type="button" data-uxm="gym" aria-pressed="'+gymOn+'">Gym · one at a time</button></div>';
+    if(lift&&$q('#session [data-logmode]'))h+='<p class="uxlab">Log your sets</p><div class="uxseg"><button type="button" data-uxm="list" aria-pressed="'+!gymOn+'">Normal · all at once</button><button type="button" data-uxm="gym" aria-pressed="'+gymOn+'">Gym · one at a time</button></div>';
     OP.innerHTML=h}
   OP.addEventListener('click',e=>{const o=e.target.closest('[data-uxo]');
     if(o){const a=o.dataset.uxo;sheet(OP,false);
