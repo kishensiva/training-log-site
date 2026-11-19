@@ -3209,10 +3209,18 @@ function buildSession(d){
       if(s.run.mins!==b.mins||(+s.run.iv||0)!==b.iv||hasInf)s.run.coach={why:String(o.why||'').slice(0,240),info:inf,was:b,ev:Array.isArray(o.evidence)?o.evidence.filter(x=>typeof x==='string').slice(0,3):[]};
       s.run.done.mins=s.run.mins}
     if(v==='trim'&&!s.express){if(s.run.iv>0){const n0=+s.run.iv,n1=Math.max(2,n0-1);s.run.iv=n1;s.run.mins=Math.max(15,s.run.mins-7*(n0-n1));s.run.done.mins=s.run.mins;s.run.info='Trim day: '+n1+' hard intervals instead of '+n0+'. '+(s.run.info||'')}else{s.run.mins=Math.max(15,Math.round(s.run.mins*0.75/5)*5);s.run.done.mins=s.run.mins;s.run.info='Trim day: shorter and strictly easy. '+(s.run.info||'')}}
-    if(s.express){s.run.mins=20;s.run.done.mins=20;s.run.iv=0;s.run.hr='120–137 bpm';s.run.info='Easy and conversational. 20 minutes keeps your streak'}}
+    if(s.express){s.run.mins=20;s.run.done.mins=20;s.run.iv=0;s.run.hr='120–137 bpm';s.run.info='Easy and conversational. 20 minutes keeps your streak'}
+    runWords(s)}
   if(p.type==='rest'){s.checks=p.checks;s.checked={}}
   return s;
 }
+/* the words follow the numbers (19 Nov): when a trim, the coach or Express changes how many hard intervals there are,
+   the title, name, description and timer all say the new count, never the plan's original one */
+function runWords(s){if(!s||s.type!=='cardio'||!s.run)return;const r=s.run,n=+r.iv||0,t=String(s.title||'');
+  if(!/^(\d+×4 intervals|Easy cardio) \+ core\b/.test(t)&&!/\+ \d+×4 intervals/.test(t))return;
+  if(n>0){s.title=t.replace(/^Easy cardio \+ core/,n+'×4 intervals + core').replace(/^\d+×4 intervals/,n+'×4 intervals').replace(/\+ \d+×4 intervals/,'+ '+n+'×4 intervals');r.name=n+'×4 min hard';
+    if(r.info)r.info=r.info.replace(/\b\d+×\(4 min hard/g,n+'×(4 min hard')}
+  else{if(/^\d+×4 intervals \+ core/.test(t))s.title=t.replace(/^\d+×4 intervals/,'Easy cardio');if(/×4 min hard/.test(r.name||''))r.name='Easy cardio'}}
 function game(){
   const ds=Object.keys(logs).sort().filter(d=>weekOf(parse(d))>=1);
   let xp=0,checkins=0,workouts=0,early=0,prs=0,lower=0,plank=0,longest=0,fullWeeks=0,perfect=0,mobs=0,ghosts=0;
@@ -3339,7 +3347,7 @@ $('snap-ready').addEventListener('change',async e=>{const f=e.target.files&&e.ta
   e.target.value=''});
 
 /* session rendering */
-function renderSession(){if(cur&&cur.week)setPhase(cur.week);
+function renderSession(){if(cur&&cur.week)setPhase(cur.week);try{if(cur&&!['done','partial','skipped'].includes(cur.status))runWords(cur)}catch(e){}
   const el=$('session');el.innerHTML='';const busy=mode==='live'||mode==='feedback';$('nav').hidden=busy;$('quests').hidden=busy;$('xpc').hidden=busy;showVerdict();
   if(mode==='night')return renderNight(el);
   if(mode==='feedback'&&cur)return renderFeedback();
@@ -4173,7 +4181,7 @@ function renderCardio(el){
     if(pre){const go=open=>{cur.status='in_progress';if(!cur.startedAt)cur.startedAt=new Date().toISOString();if(open)cur.logOpen=true;persist(true);renderSession();if(!open)window.scrollTo({top:$('session').offsetTop-8,behavior:RM()?'auto':'smooth'});else setTimeout(()=>{const c=$('runlog');if(c)window.scrollTo({top:c.getBoundingClientRect().top+scrollY-12,behavior:RM()?'auto':'smooth'})},40)};
       $('startR').onclick=()=>go(false);$('logR').onclick=()=>go(true);$('skipR0').onclick=()=>finishSave('skipped')}
     return}
-  h+=warmHtml()+zonesHtml(r)+(r.iv?'<section class="card"><div class="ivt" id="ivt"><span id="ivph">Interval timer</span><b class="num" id="ivtime">'+fmtT(600)+'</b><button id="ivgo">Start 4×4 timer</button></div></section>':'')+addonHtml()+'<section class="card" id="runlog">';
+  h+=warmHtml()+zonesHtml(r)+(r.iv?'<section class="card"><div class="ivt" id="ivt"><span id="ivph">Interval timer</span><b class="num" id="ivtime">'+fmtT(600)+'</b><button id="ivgo">Start '+r.iv+'×4 timer</button></div></section>':'')+addonHtml()+'<section class="card" id="runlog">';
   if(!logOpen){h+='<div class="runready"><h2>Finished?</h2><p class="msg">Log it once you\'re done. If your watch syncs to Strava, the numbers fill in by themselves.</p></div><button class="primary" id="openLog">I\'m done · log it</button><button class="ghost" id="skipR">Skipped</button>';
     el.innerHTML=h+'<p class="msg" id="smsg" role="status"></p></section>';wireModes();
     $('openLog').onclick=()=>{cur.logOpen=true;persist();renderSession();setTimeout(()=>{const c=$('runlog');if(c)window.scrollTo({top:c.getBoundingClientRect().top+scrollY-12,behavior:RM()?'auto':'smooth'})},40)};$('skipR').onclick=()=>finishSave('skipped');
@@ -5589,28 +5597,38 @@ try{
 .uxseg button{padding:10px 4px;border-radius:11px;font-weight:600;font-size:14.5px;color:var(--muted);background:transparent;border:0;box-shadow:none;min-height:44px;text-transform:none;letter-spacing:0;transition:background-color .2s,color .2s}
 .uxseg button[aria-pressed="true"]{background:var(--card);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .uxlab{font-size:13px;color:var(--muted);margin:0 0 -6px}
-#session .hero .uxunder{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:14px;color:var(--hero-muted,rgba(255,255,255,.78));padding:0 4px}
-#session .hero .uxunder b{color:#fff;font-weight:600}
-#session .hero .uxunder button{background:none;border:0;box-shadow:none;color:#fff;font-weight:600;text-decoration:underline;text-underline-offset:3px;min-height:40px;font-size:15px;padding:0;text-transform:none;letter-spacing:0;width:auto}
-#session .hero.uxon .modepick,#session .hero.uxon #expressW,#session .hero.uxon #expressR,#session .hero.uxon .hlinks{display:none!important}
-#session .hero .uxfeel{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;padding:6px 12px 6px 10px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:14px;font-weight:600;min-height:34px;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto}
-#session .hero .uxfeel i{width:9px;height:9px;border-radius:50%;background:#5ee39a}
+#session .hero .uxunder{display:flex;justify-content:center;margin-top:-4px}
+#session .hero .uxunder button{background:none;border:0;box-shadow:none;color:rgba(255,255,255,.86);font-weight:600;min-height:44px;font-size:15px;padding:0 14px;text-transform:none;letter-spacing:0;width:auto;border-radius:999px;transition:color .15s ease,background-color .15s ease}
+#session .hero .uxunder button:active{background:rgba(255,255,255,.1);color:#fff}
+#session .hero.uxon .modepick,#session .hero.uxon #expressW,#session .hero.uxon #expressR,#session .hero.uxon .hlinks,#session .hero.uxon .kfullb{display:none!important}
+#session .hero .uxfeel{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;max-width:100%;white-space:nowrap;padding:0 6px 0 12px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:14px;font-weight:500;min-height:36px;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto;transition:transform .12s ease-out,background-color .15s ease}
+#session .hero .uxfeel:active{transform:scale(.97);background:rgba(255,255,255,.2)}
+#session .hero .uxfeel b{font-weight:700}
+#session .hero .uxfeel .c{padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.16);font-size:12.5px;font-weight:600}
+#session .hero .uxfeel i{width:8px;height:8px;border-radius:50%;background:#5ee39a;flex:none}
+#session .hero .metas .uxex{background:#fff;color:var(--hero,#7a1733);box-shadow:none}
+#session .hero.uxon button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+#session .hero.uxon #startW,#session .hero.uxon #startR{border:0;transition:transform .12s ease-out}
+#session .hero.uxon #startW:active,#session .hero.uxon #startR:active{transform:scale(.97)}
+#session .hero.uxfade>*{animation:uxin .32s cubic-bezier(.23,1,.32,1) both}
+#session .hero.uxfade>*:nth-child(2){animation-delay:.03s}#session .hero.uxfade>*:nth-child(3){animation-delay:.06s}#session .hero.uxfade>*:nth-child(n+4){animation-delay:.09s}
+@keyframes uxin{from{opacity:0;transform:translateY(6px)}}
 #session .hero .uxfeel i.w{background:#ffc35c}#session .hero .uxfeel i.r{background:#ff8b8b}
 .uxsnack{position:fixed;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:62;max-width:500px;margin:0 auto;background:#1d1f24;color:#fff;border-radius:16px;min-height:56px;padding:0 6px 0 16px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.3);animation:uxup .38s cubic-bezier(.23,1,.32,1) both}
 .uxsnack.out{animation:uxdown .22s ease-in both}
 .uxsnack span{flex:1;font-size:15px}.uxsnack button{color:#8fb3ff;font-weight:700;min-height:44px;padding:0 12px;background:none;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto}
 .uxsnack i{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#8fb3ff;transform-origin:left;animation:uxbar 6s linear both}
 @keyframes uxup{from{opacity:0;transform:translateY(18px)}}@keyframes uxdown{to{opacity:0;transform:translateY(14px)}}@keyframes uxbar{to{transform:scaleX(0)}}
-@media (prefers-reduced-motion:reduce){.uxsh,.uxdim{transition:none}.uxsnack,.uxsnack i{animation:none}}`;
+@media (prefers-reduced-motion:reduce){.uxsh,.uxdim{transition:none}.uxsnack,.uxsnack i,#session .hero.uxfade>*{animation:none}}`;
   const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
   const FEEL={good:['','Good','train as planned'],meh:['w','Meh','warm up, then decide'],tired:['w','Tired','Express is the smart call'],wrecked:['r','Wrecked','recovery day instead']};
   const $q=s=>document.querySelector(s);
   const dim=document.createElement('div');dim.className='uxdim';document.body.appendChild(dim);
   function mk(id,label){const s=document.createElement('div');s.className='uxsh';s.id=id;s.tabIndex=-1;s.setAttribute('role','dialog');s.setAttribute('aria-modal','true');s.setAttribute('aria-label',label);document.body.appendChild(s);return s}
   const CI=mk('uxCheck','Morning check-in'),OP=mk('uxOpts','Other options');
-  let openSh=null,back=null;
+  let openSh=null,back=null,kb=false;addEventListener('keydown',()=>{kb=true},true);addEventListener('pointerdown',()=>{kb=false},true);
   function sheet(el,on){if(on){if(openSh&&openSh!==el)sheet(openSh,false);back=document.activeElement;openSh=el;el.classList.remove('off');void el.offsetWidth;el.classList.add('on');dim.classList.add('on');setTimeout(()=>{try{el.focus({preventScroll:true})}catch(e){}},60)}
-    else{el.classList.remove('on');el.classList.add('off');dim.classList.remove('on');if(openSh===el)openSh=null;try{back&&back.focus&&back.focus({preventScroll:true})}catch(e){}}}
+    else{el.classList.remove('on');el.classList.add('off');dim.classList.remove('on');if(openSh===el)openSh=null;try{if(kb&&back&&back.focus)back.focus({preventScroll:true});else if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur()}catch(e){}}}
   dim.onclick=()=>{if(openSh)sheet(openSh,false)};
   addEventListener('keydown',e=>{if(e.key==='Escape'&&openSh)sheet(openSh,false)});
   const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
@@ -5637,6 +5655,7 @@ try{
   /* other options sheet */
   function renderOP(){const lift=!!$q('#session .hero #startW'),ex=$q('#session .hero #expressW')||$q('#session .hero #expressR'),gymOn=!!$q('#session [data-logmode="gym"][aria-pressed="true"]');
     let h='<div class="hd"></div><h2 style="font-size:22px">Other options</h2><div>';
+    if($q('#session .hero .kfullb'))h+='<button type="button" class="uxrow" data-uxo="full"><span class="ic" aria-hidden="true">↺</span><span class="tx">Back to the full session<small>'+esc(((cur&&cur.title)||'').replace(/ · Express$/,''))+'</small></span></button>';
     if(ex)h+='<button type="button" class="uxrow" data-uxo="express"><span class="ic" aria-hidden="true">⚡</span><span class="tx">'+esc(ex.textContent.replace(/^Tired\?\s*/,''))+'<small>Short on time or energy. Streak stays safe</small></span></button>';
     h+='<button type="button" class="uxrow" data-uxo="feel"><span class="ic" aria-hidden="true">☺</span><span class="tx">'+(feelNow()?'Change how you feel':'How do you feel?')+'</span></button>';
     if($q('#session .hero #quickW')||$q('#session .hero #logR'))h+='<button type="button" class="uxrow" data-uxo="log"><span class="ic" aria-hidden="true">✓</span><span class="tx">Already done? Log as planned</span></button>';
@@ -5649,6 +5668,7 @@ try{
       if(a==='feel'){setTimeout(openCI,240);return}
       const pick=s=>{const b=$q('#session .hero '+s);if(b)b.click();return!!b};
       if(a==='express'){pick('#expressW')||pick('#expressR');return}
+      if(a==='full'){pick('.kfullb');return}
       if(a==='log'){pick('#quickW')||pick('#logR');return}
       if(a==='skip'){const t=(cur&&cur.title||'Today').replace(/ · Express$/,'');if(pick('#skipW')||pick('#skipR0'))setTimeout(()=>snack(t+' skipped',()=>{const u=$('editW');if(u&&/Undo skip/.test(u.textContent))u.click()}),250);return}
       return}
@@ -5666,11 +5686,20 @@ try{
 
   /* the hero: one Start, the mode line and Other options under it, the feel pill above the plan */
   function hero(){if(!isToday())return;const s=startBtn();if(!s)return;const h=s.closest('.hero');if(!h||h.classList.contains('uxon'))return;h.classList.add('uxon');
-    const lift=s.id==='startW',gymOn=!!h.querySelector('[data-logmode="gym"][aria-pressed="true"]');
-    const u=document.createElement('div');u.className='uxunder';u.innerHTML='<span>'+(lift?'Logging in <b>'+(gymOn?'Gym mode':'Normal view')+'</b>':'&nbsp;')+'</span><button type="button" data-uxopen="1">Other options</button>';
-    s.insertAdjacentElement('afterend',u);u.querySelector('[data-uxopen]').onclick=()=>{renderOP();sheet(OP,true)};
-    const f=feelNow();if(f&&FEEL[f]){const p=document.createElement('button');p.type='button';p.className='uxfeel';p.innerHTML='<i class="'+FEEL[f][0]+'"></i>Feeling '+FEEL[f][1].toLowerCase()+' · <u>'+FEEL[f][2]+'</u>';p.onclick=openCI;
+    /* title: "4×4 intervals + core", with Express as a chip rather than a third line of the heading */
+    const ht=h.querySelector('.ht'),ms=h.querySelector('.metas');
+    if(ht&&/ · Express$/.test(ht.textContent)){const b=ht.textContent.replace(/ · Express$/,'');ht.textContent=b;try{ht.style.setProperty('--fit',fitW(b))}catch(e){}
+      if(ms&&!ms.querySelector('.uxex')){const c=document.createElement('span');c.className='uxex';c.textContent='Express';ms.prepend(c)}}
+    /* the line under the chips ends like a sentence */
+    const inf=ms&&ms.nextElementSibling;if(inf&&inf.tagName==='DIV'&&!inf.children.length){const t=inf.textContent.trim();if(t&&!/[.!?…)]$/.test(t))inf.textContent=t+'.'}
+    /* "80 kg" never splits across lines */
+    h.querySelectorAll('.plantg b,.metas span').forEach(n=>{if(!n.children.length)n.textContent=n.textContent.replace(/(\d) (kg|min|bpm|s)\b/g,'$1\u00a0$2')});
+    const u=document.createElement('div');u.className='uxunder';u.innerHTML='<button type="button" data-uxopen="1">Other options</button>';
+    (h.querySelector('.kfullb')||s).insertAdjacentElement('afterend',u);u.querySelector('[data-uxopen]').onclick=()=>{renderOP();sheet(OP,true)};
+    const f=feelNow();if(f&&FEEL[f]){const p=document.createElement('button');p.type='button';p.className='uxfeel';p.setAttribute('aria-label','Feeling '+FEEL[f][1].toLowerCase()+'. Change');p.innerHTML='<i class="'+FEEL[f][0]+'"></i><span>Feeling <b>'+FEEL[f][1].toLowerCase()+'</b></span><span class="c" aria-hidden="true">Change</span>';p.onclick=openCI;
       const anchor=h.querySelector('.plantg')||s;anchor.insertAdjacentElement('beforebegin',p)}
+    /* when the day itself changes (Express on or off, a new feel), the card settles in instead of snapping */
+    const sig=(cur.date||'')+'|'+(cur.title||'')+'|'+(f||'');if(hero.sig&&hero.sig!==sig){h.classList.add('uxfade');setTimeout(()=>h.classList.remove('uxfade'),500)}hero.sig=sig;
     /* Start asks how he feels first, once a day */
     s.addEventListener('click',e=>{if(feelNow()||ciDone())return;e.preventDefault();e.stopImmediatePropagation();openCI()},true)}
   function auto(){if(!isToday()||feelNow()||ciDone()||openSh)return;if(typeof view!=='undefined'&&view!=='today')return;const s=startBtn();if(!s)return;
