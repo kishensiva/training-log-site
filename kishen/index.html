@@ -918,7 +918,9 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
    - Morning (before 12): how he slept and the call. Afternoon (12–6pm): what's still to do. Evening (after 6pm): a
      recap or a nudge, and a sleep line when last night was short. After the session it switches to a recap any time.
    - The speaker plays it in "JARVIS", the voice he designed on ElevenLabs, through functions/brief (one clip per
-     wording per day, at most 4 new clips a day, kept so a replay is free). It never plays by itself: he taps.
+     wording per day, kept so a replay is free). It never plays by itself: he taps. Mornings only (his call, 19 Nov:
+     free plan, voice just for the morning briefing); afternoon and evening keep the card without the speaker.
+     The speaker shows once the watch has synced and today's call is made, so a morning makes one whole clip.
    - If the clip can't be made (no credits, daily cap, offline) it reads it in the phone's own voice instead.
    - The wording keeps no live counters (no step counts), so the clip doesn't need re-making as the day goes on. */
 (function () {
@@ -934,7 +936,7 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
 #gbrief.wait .wv i{animation:gbp 1s ease-in-out infinite;opacity:.9}
 @keyframes gbw{from{height:4px}to{height:17px}}@keyframes gbp{0%,100%{opacity:.25}50%{opacity:1}}
 #gbrief .spk{width:44px;height:44px;flex:none;border-radius:999px;border:1px solid var(--line);background:var(--soft);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
-#gbrief .spk svg{width:20px;height:20px}
+#gbrief .spk svg{width:20px;height:20px}#gbrief .vn{font-size:12px;color:var(--muted);min-height:44px;display:flex;align-items:center}
 #gbrief .hi{margin:0;font-size:21px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
 #gbrief .ln{margin:0;font-size:15px;line-height:1.45;color:var(--muted)}#gbrief .ln b{color:var(--fg);font-weight:600}
 #gbrief.fresh .hi,#gbrief.fresh .ln{animation:gbin .6s cubic-bezier(.16,1,.3,1) both}#gbrief.fresh .ln:nth-of-type(2){animation-delay:.15s}#gbrief.fresh .ln:nth-of-type(3){animation-delay:.3s}#gbrief.fresh .ln:nth-of-type(4){animation-delay:.45s}
@@ -1016,7 +1018,11 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
       if (sleepShortL) L.push(sleepShortL);
     }
     const g = 'Good ' + s + ', sir.';
-    return { g, lines: L.slice(0, 3).map(x => x[0]), say: [g].concat(L.slice(0, 3).map(x => x[1])).join(' ').replace(/’/g, "'").replace(/½/g, ' and a half') };
+    /* complete = the watch has sent this morning's numbers and today's call is made (or the session is logged):
+       only then does the speaker show, so each morning makes one clip of the whole briefing, not a half one first */
+    const hasG = ['hrv', 'bodyBattery', 'sleepHrs', 'sleepScore'].some(k => typeof t[k] === 'number');
+    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && !!(rest || recOf || v));
+    return { g, complete, lines: L.slice(0, 3).map(x => x[0]), say: [g].concat(L.slice(0, 3).map(x => x[1])).join(' ').replace(/’/g, "'").replace(/½/g, ' and a half') };
   }
 
   /* ---------- playing ---------- */
@@ -1033,12 +1039,13 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
       u.onend = u.onerror = () => setState('idle'); setState('talk'); s.speak(u) } catch (e) { setState('idle') } }
   async function play() {
     if (state !== 'idle') return stop();
+    if (slot() !== 'morning' || !words().complete) return;
     const w = words(), text = w.say, a = new Audio(); audio = a; a.preload = 'auto';   // made inside the tap, so the phone lets it play
     setState('wait');
     let url = urls[text];
     if (!url) { try { const r = await window.sbFn('brief', { action: 'speak', text, date: isoD(today) }); url = r && r.url; if (url) urls[text] = url;
         else if (r && r.code === 'daily_cap') { try { toast('Today’s voice clips are used up, so your phone is reading it') } catch (e) {} }
-        else if (r && r.code === 'no_credits') { try { toast('Voice credits are used up this month, so your phone is reading it') } catch (e) {} } } catch (e) {} }
+        else if (r && (r.code === 'no_credits' || r.code === 'month_cap')) { try { toast('Voice credits are used up this month, so your phone is reading it') } catch (e) {} } } catch (e) {} }
     if (audio !== a) return;                                       // he tapped stop while it was loading
     if (!url) return phoneVoice(text);
     a.src = url; a.onended = () => { if (audio === a) { audio = null; setState('idle') } }; a.onerror = () => { if (audio === a) { audio = null; phoneVoice(text) } };
@@ -1052,7 +1059,7 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     if (!strip || !host || !td || isoD(sel) !== td || live) { if (e) { stop(); e.remove() } lastHtml = ''; return }
     const w = words();
     const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Briefing</div>' +
-      '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button></div>' +
+      (state !== 'idle' || (slot() === 'morning' && w.complete) ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
       '<p class="hi">' + esc(w.g) + '</p>' + w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
     if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Briefing');
       e.addEventListener('click', ev => { if (ev.target.closest('.spk')) play() }) }
