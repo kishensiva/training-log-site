@@ -5720,6 +5720,7 @@ try{
 /* header: the same on every day (19 Nov, his call). Row 1: plan line + Today pill (when away from today); row 2: date + ‹ ›.
    Row 1 keeps its height with or without the pill, so the date never moves. */
 .top{display:grid!important;grid-template-columns:minmax(0,1fr) 40px 40px;grid-template-areas:"eb tb tb" "dt pv nx";column-gap:6px;row-gap:0;align-items:center}
+body[data-view]:not([data-view="today"]) .wrap>.top{display:none!important}
 .top .t{display:contents}
 .top #wklabel{grid-area:eb;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:32px;min-height:32px;margin:0}
 .top #datelabel{grid-area:dt;min-width:0;margin:0}
