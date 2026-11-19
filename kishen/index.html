@@ -370,6 +370,11 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     })());
   }
   window.stravaConnect = stravaConnect;
+  /* call one of the app's own server helpers (functions/<name>) as the signed-in user; Garmin link uses it */
+  window.sbFn = async (name, body) => {
+    const { data: { session } } = await sb.auth.getSession(); if (!session) throw { code: 'not_signed_in' };
+    const r = await fetch(URL0 + '/functions/v1/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(Object.assign({ app: APP }, body)) });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign({ status: r.status }, j); return j };
 
   const user = { isOwner: () => true, canEdit: () => true, can: () => true, id: async () => uid, me: async () => ({ id: uid, name: '' }), profiles: async () => ({}), search: async () => [] };
   const downloads = { save: async ({ filename, data }) => { const b = data instanceof Blob ? data : new Blob([data]); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || 'download'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000) } };
@@ -478,6 +483,110 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     setTimeout(offer, 5000);
   });
   window.NPUSH = { offer, card, turnOn };
+})();
+
+</script><script>
+/* Garmin link (19 Nov 2026, Kishen's app only). Garmin's official Personal API, through functions/garmin.
+   - Progress → Body: a "Garmin link" card. He pastes his Personal API key there once; it goes straight to the
+     server's locked table and is never kept in the page, the phone or the chat.
+   - Today: when today's check-in is open, any empty box among HRV, resting HR, Body Battery and sleep score is
+     filled from Garmin and saved. Numbers he typed himself are never replaced. Training Readiness stays manual
+     (the Personal API doesn't offer it).
+   - The server also pulls at 6:05 and 6:20am into garmin/<date> so the 6:27am coach has the numbers first. */
+(function () {
+  if (window.WEB_APP !== 'kishen') return;
+  const KEYS = [['hrv', 'HRV'], ['restingHR', 'resting HR'], ['bodyBattery', 'Body Battery'], ['sleepScore', 'sleep score']];
+  const db = () => window.claude.use('db');
+  const tell = t => { try { toast(t) } catch (e) {} };
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const isoD = d => { try { return iso(d) } catch (e) { return '' } };
+  let st = null, lastFill = 0, filling = false, filledFor = '';
+
+  const css = `#garcard .msg{margin:0}#garcard .grow{display:flex;flex-direction:column;gap:8px}
+#garcard label small{display:block;color:var(--muted);font-size:13px;margin-bottom:4px}
+#garcard input{width:100%;box-sizing:border-box;min-height:46px;border-radius:12px;border:1px solid var(--line);background:var(--soft);color:var(--fg);font:16px var(--body,inherit);padding:0 12px}
+#garcard .gb{display:flex;gap:8px;flex-wrap:wrap}#garcard .gb button{flex:1;min-height:46px;border-radius:999px;border:0;background:var(--soft);color:var(--fg);font:600 15px var(--body,inherit);text-transform:none;letter-spacing:0}
+#garcard .gb button.go{background:var(--fg);color:var(--bg)}#garcard .gb button:disabled{opacity:.6}
+#garcard .gst{display:flex;align-items:center;gap:8px;font-size:15px}#garcard .gst i{width:9px;height:9px;border-radius:50%;background:var(--done);flex:none}
+#garcard .gst i.off{background:var(--muted)}#garcard .gst i.bad{background:var(--miss)}#garcard .gsub{color:var(--muted);font-size:13px;margin:2px 0 0}`;
+  const se = document.createElement('style'); se.textContent = css; document.head.appendChild(se);
+
+  async function loadStatus() { try { const d = await db(); const g = await d.doc('garmin/status').get(); st = g.exists ? g.data() : null } catch (e) {} return st }
+  const fmtDay = s => { try { return new Date(s + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) } catch (e) { return s } };
+  const fmtWhen = s => { try { const d = new Date(s); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }) } catch (e) { return '' } };
+  const errText = e => e === 'bad_key' ? 'Garmin turned the key down. It may have expired: make a new one and replace it.'
+    : e === 'rate_limited' ? 'Garmin asked us to slow down. It will try again later.'
+    : e === 'no numbers yet' ? 'Nothing from last night yet. Open Garmin Connect so your watch syncs.'
+    : e ? 'Garmin didn’t answer last time. It will try again.' : '';
+
+  function daysLeft(d) { if (!d) return null; return Math.round((Date.parse(d + 'T00:00:00+08:00') - Date.now()) / 864e5) }
+
+  async function card(mode) {
+    const host = document.getElementById('view-prog'); if (!host) return;
+    let c = document.getElementById('garcard');
+    if (!c) { c = document.createElement('section'); c.className = 'card'; c.id = 'garcard'; c.dataset.pg = 'body'; c.setAttribute('aria-labelledby', 'garh'); host.appendChild(c) }
+    if (mode !== 'form') await loadStatus();
+    let h = '<h2 id="garh">Garmin link</h2>';
+    if (mode === 'form' || !st || !st.connected) {
+      h += '<p class="msg">Fills in your morning HRV, resting HR, Body Battery and sleep score from Garmin. Training Readiness stays a box you fill in, because Garmin doesn’t share it.</p>' +
+        '<div class="grow"><label><small>Your Garmin Personal API key</small><input type="password" id="garkey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the key here"></label>' +
+        '<label><small>Key expires on (shown on Garmin’s key page)</small><input type="date" id="garexp"></label></div>' +
+        '<div class="gb">' + (st && st.connected ? '<button type="button" data-gk="cancel">Cancel</button>' : '') + '<button type="button" class="go" data-gk="save">Connect Garmin</button></div>';
+    } else {
+      const left = daysLeft(st.key_expires), bad = st.last_err === 'bad_key' || (left != null && left < 0);
+      h += '<div class="gst"><i class="' + (bad ? 'bad' : '') + '"></i><span>' + (bad ? 'Key not working' : 'Connected') + '</span></div>' +
+        '<p class="gsub">' + (st.last_ok ? 'Last synced ' + esc(fmtWhen(st.last_ok)) : 'Not synced yet') +
+        (st.key_expires ? ' · key ' + (left != null && left < 0 ? 'expired ' : 'expires ') + esc(fmtDay(st.key_expires)) + (left != null && left >= 0 && left <= 21 ? ' (' + left + ' days)' : '') : '') + '</p>' +
+        (st.last_err ? '<p class="msg">' + esc(errText(st.last_err)) + '</p>' : '') +
+        '<div class="gb"><button type="button" class="go" data-gk="sync">Sync now</button><button type="button" data-gk="replace">Replace key</button><button type="button" data-gk="off">Disconnect</button></div>';
+    }
+    c.innerHTML = h;
+    const b = k => c.querySelector('[data-gk="' + k + '"]');
+    if (b('save')) b('save').onclick = async () => {
+      const inp = document.getElementById('garkey'), key = (inp.value || '').trim(), exp = document.getElementById('garexp').value || null;
+      if (!key) { inp.focus(); return }
+      const go = b('save'); go.disabled = true; go.textContent = 'Checking with Garmin…';
+      try { const r = await window.sbFn('garmin', { action: 'setkey', key, expires: exp, date: isoD(today) }); inp.value = '';
+        tell(r.tokenOk ? 'Garmin connected' : 'Key saved. Garmin didn’t answer yet; it will retry'); filledFor = ''; lastFill = 0; await card(); fill(r.values) }
+      catch (e) { go.disabled = false; go.textContent = 'Connect Garmin'; tell(e && e.code === 'bad_key' ? 'Garmin didn’t accept that key. Copy it again and paste it' : 'Couldn’t reach the server. Try again') } };
+    if (b('cancel')) b('cancel').onclick = () => card();
+    if (b('replace')) b('replace').onclick = () => card('form');
+    if (b('sync')) b('sync').onclick = async () => { const s = b('sync'); s.disabled = true; s.textContent = 'Syncing…'; lastFill = 0; filledFor = ''; await fill(null, true); card() };
+    if (b('off')) b('off').onclick = async () => { const o = b('off');
+      if (o.dataset.sure !== '1') { o.dataset.sure = '1'; o.textContent = 'Tap again to disconnect'; setTimeout(() => { if (o.isConnected) { o.dataset.sure = ''; o.textContent = 'Disconnect' } }, 4000); return }
+      o.disabled = true; try { await window.sbFn('garmin', { action: 'disconnect' }); tell('Garmin disconnected') } catch (e) { tell('Couldn’t disconnect. Try again') } card() };
+  }
+
+  /* copy Garmin's numbers into today's empty boxes */
+  async function fill(values, force) {
+    if (filling) return; const d = isoD(today);
+    try { if (typeof view !== 'undefined' && view !== 'today' && !force) return; if (isoD(sel) !== d) return } catch (e) { return }
+    if (!force && filledFor === d && Date.now() - lastFill < 20 * 60e3) return;
+    if (!st) await loadStatus(); if (!st || !st.connected) return;
+    filling = true;
+    try {
+      let v = values;
+      if (!v) { const r = await window.sbFn('garmin', { action: 'today', date: d, cached: !force }); v = r && r.values }
+      lastFill = Date.now(); filledFor = d;
+      if (!v || isoD(sel) !== d) return;
+      const got = [];
+      KEYS.forEach(([k]) => { if (typeof ready[k] !== 'number' && typeof v[k] === 'number') { ready[k] = v[k]; got.push(k) } });
+      if (!got.length) { if (force) tell(KEYS.every(([k]) => typeof ready[k] === 'number') ? 'Your Garmin numbers are already in' : 'Nothing new from Garmin yet. Open Garmin Connect so your watch syncs'); return }
+      ready.auto = Array.from(new Set([...(ready.auto || []), ...got]));
+      got.forEach(k => { const el = document.getElementById('g-' + k); if (el && document.activeElement !== el) el.value = ready[k] });
+      try { gHints(); showVerdict() } catch (e) {}
+      readyBusy = true; await saveReady(d);
+      tell('From Garmin: ' + got.map(k => KEYS.find(x => x[0] === k)[1]).join(', '));
+    } catch (e) { if (force) tell('Garmin didn’t answer. Try again in a minute') }
+    finally { filling = false }
+  }
+
+  db().then(d => { if (!d) return;
+    card();
+    setTimeout(fill, 2500);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(fill, 1200) });
+    document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#nav')) setTimeout(fill, 800) }, true);
+  }).catch(() => {});
 })();
 
 </script></head><body>
