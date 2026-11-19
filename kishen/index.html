@@ -498,6 +498,8 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
 (function () {
   if (window.WEB_APP !== 'kishen') return;
   const KEYS = [['hrv', 'HRV'], ['restingHR', 'resting HR'], ['bodyBattery', 'Body Battery'], ['sleepScore', 'sleep score']];
+  /* Garmin's all-day stress (0–100) for yesterday → the stress chip. Over 60 counts as high (his cut-off, 19 Nov) */
+  const stressChip = v => v > 60 ? 'high' : v > 25 ? 'normal' : 'low';
   const db = () => window.claude.use('db');
   const tell = t => { try { toast(t) } catch (e) {} };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -573,12 +575,14 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
       if (!v || isoD(sel) !== d) return;
       const got = [];
       KEYS.forEach(([k]) => { if (typeof ready[k] !== 'number' && typeof v[k] === 'number') { ready[k] = v[k]; got.push(k) } });
+      { const G = (typeof garDay !== 'undefined' && garDay) || {}, ys = (G[dayIso(today, -1)] || {}).stressAvg;   // stress comes from Garmin too
+        if (!ready.stress && typeof ys === 'number') { ready.stress = stressChip(ys); got.push('stress') } }
       if (!got.length) { if (force) tell(KEYS.every(([k]) => typeof ready[k] === 'number') ? 'Your Garmin numbers are already in' : 'Nothing new from Garmin yet. Open Garmin Connect so your watch syncs'); return }
       ready.auto = Array.from(new Set([...(ready.auto || []), ...got]));
       got.forEach(k => { const el = document.getElementById('g-' + k); if (el && document.activeElement !== el) el.value = ready[k] });
       try { gHints(); showVerdict() } catch (e) {}
       readyBusy = true; await saveReady(d);
-      tell('From Garmin: ' + got.map(k => KEYS.find(x => x[0] === k)[1]).join(', '));
+      tell('From Garmin: ' + got.map(k => k === 'stress' ? 'stress' : KEYS.find(x => x[0] === k)[1]).join(', '));
     } catch (e) { if (force) tell('Garmin didn’t answer. Try again in a minute') }
     finally { filling = false }
   }
@@ -586,18 +590,140 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   /* steps and calories: one line on Today, a 4-week card on Progress → Training */
   const fmtN = n => Math.round(n).toLocaleString('en-GB');
   const dayIso = (d, off) => { const x = new Date(d); x.setDate(x.getDate() + off); return isoD(x) };
+  /* "Your body today": the morning glance, top of Today (19 Nov, his ask: find the numbers fast, few words).
+     Four tiles, each a number and one status word against his own normal; steps underneath; details on tap. */
+  const bcss = `#gbody{padding:14px 14px 8px;background:var(--kcard,var(--card));border:0;border-radius:20px;box-shadow:var(--ksh,none)}#gbody .bh{display:flex;justify-content:space-between;align-items:baseline;margin:0 2px 10px}
+#gbody .bh b{font-size:15px;font-weight:700}#gbody .bh small{color:var(--muted);font-size:12px}
+#gbody .bt{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+#gbody .t{background:var(--soft);border:0;border-radius:14px;padding:9px 4px 8px;text-align:center;color:var(--fg);font:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:84px;justify-content:center}
+#gbody .t span{font-size:11.5px;color:var(--muted);letter-spacing:.02em}
+#gbody .t b{font-size:25px;line-height:1.05;font-weight:700;font-variant-numeric:tabular-nums}
+#gbody .t b small{font-size:12px;font-weight:600;color:var(--muted);margin-left:1px}
+#gbody .t em{font-style:normal;font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px;white-space:nowrap}
+#gbody .t em:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+#gbody .t em.ok{color:var(--gold)}#gbody .t em.ok:before{background:var(--gold)}
+#gbody .t em.mid{color:var(--warn)}#gbody .t em.mid:before{background:var(--warn)}
+#gbody .t em.lo{color:var(--miss)}#gbody .t em.lo:before{background:var(--miss)}
+#gbody .t em.na{color:var(--muted)}
+#gbody .bs{display:flex;align-items:center;gap:10px;margin:10px 2px 0;font-size:14px}
+#gbody .bs .bar{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}#gbody .bs .bar i{display:block;height:100%;background:var(--done);border-radius:3px}
+#gbody .bs b{font-variant-numeric:tabular-nums}#gbody .bs small{color:var(--muted);font-size:12.5px;white-space:nowrap}
+#gbody .more{display:block;width:100%;background:none;border:0;color:var(--muted);font:600 13px var(--body,inherit);min-height:36px;margin-top:4px}
+#gbody .dt{border-top:1px solid var(--line);margin-top:6px;padding-top:10px;display:flex;flex-direction:column;gap:12px;font-size:14px}
+#gbody .dt h3{font:700 14px var(--body,inherit);text-transform:none;letter-spacing:0;margin:0 0 6px}#gbody .dt h3 small{text-transform:none;font-weight:500;color:var(--muted);font-size:13px;margin-left:6px}#gbody .dt p{margin:7px 0 0;color:var(--muted);font-size:13px}#gbody .dt p b{color:var(--fg)}
+#gbody .stg{display:flex;height:12px;border-radius:6px;overflow:hidden;gap:2px}#gbody .stg i{display:block}
+#gbody .lg{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:7px;font-size:13px;color:var(--muted)}#gbody .lg b{color:var(--fg);font-variant-numeric:tabular-nums}
+#gbody .lg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+#gbody .kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}#gbody .kv div{display:flex;flex-direction:column}
+#gbody.slim{padding:0}#gbody .sl{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;width:100%;background:none;border:0;color:var(--fg);font:500 14px var(--body,inherit);padding:13px 16px;text-align:left;min-height:48px}
+#gbody .sl span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}#gbody .sl span:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted)}
+#gbody .sl span.ok:before{background:var(--gold)}#gbody .sl span.mid:before{background:var(--warn)}#gbody .sl span.lo:before{background:var(--miss)}#gbody .sl small{color:var(--muted);font-size:13px;margin-left:auto}
+body.glinked #gnudge,body.glinked #snapwrap,body.glinked .uxrow[data-uxg],body.glinked #readyToggle,body.glinked #gfixb{display:none!important}
+body.glinked #ready .q{display:none}
+#ready .gfixb{display:none;background:none;border:0;color:var(--muted);font:600 13px var(--body,inherit);min-height:40px;padding:0;align-self:flex-start;text-decoration:underline;text-underline-offset:3px}
+body.glinked #ready:not(.collapsed) .gfixb{display:block}
+#gbody .kv b{font-size:17px;font-variant-numeric:tabular-nums}#gbody .kv span{font-size:12px;color:var(--muted)}`;
+  { const e = document.createElement('style'); e.textContent = bcss; document.head.appendChild(e) }
+  const STG = [['deepMin', 'Deep', '#3b5bdb'], ['remMin', 'REM', '#9b6bdf'], ['lightMin', 'Light', '#74a9f2'], ['awakeMin', 'Awake', '#f0a35e']];
+  const hm = m => Math.floor(m / 60) + 'h ' + String(Math.round(m % 60)).padStart(2, '0') + 'm';
+  let bodyOpen = false, slimOpen = false;
+  /* when Garmin is linked the check-in stops asking for numbers the card already shows */
+  function linkedUI(on) {
+    document.body.classList.toggle('glinked', on);
+    const r = document.getElementById('ready'); if (!r) return;
+    const mark = id => { const x = document.getElementById(id); const q = x && x.closest('.q'); if (q) q.classList.add('gq') };
+    mark('g-tr'); mark('gmore');
+    if (!document.getElementById('gfixb')) { const b = document.createElement('button'); b.type = 'button'; b.id = 'gfixb'; b.className = 'gfixb'; b.textContent = 'Fix a Garmin number';
+      const dr = document.getElementById('q-drinks'), q = dr && dr.closest('.q'); if (q) q.after(b);
+      b.onclick = () => { r.classList.toggle('gfix'); b.textContent = r.classList.contains('gfix') ? 'Hide the numbers' : 'Fix a Garmin number' } }
+    const tg = document.getElementById('readyToggle');
+    if (tg && on) { const op = typeof readyOpen !== 'undefined' && readyOpen; const want = op ? 'Less' : 'Legs and drinks'; if (tg.textContent !== want) tg.textContent = want; tg.hidden = false }
+  }
+  function tiles(v, G) {
+    const d = isoD(today), out = [];
+    { const sc = v.sleepScore, hrs = v.sleepHrs;
+      const [w, c] = typeof sc !== 'number' ? ['–', 'na'] : sc >= 80 ? ['Good', 'ok'] : sc >= 60 ? ['Fair', 'mid'] : ['Poor', 'lo'];
+      out.push(['Sleep', typeof hrs === 'number' ? hrs + '<small>h</small>' : typeof sc === 'number' ? sc : '–', typeof sc === 'number' ? w + ' · ' + sc : w, c]) }
+    { const x = v.hrv; let w = '–', c = 'na';
+      if (typeof x === 'number') { let h = null; try { h = hrvState(d, x) } catch (e) {}
+        const gs = String(v.hrvStatus || '');
+        if (h && h.mode === 'trend') { [w, c] = h.low ? ['Low', 'lo'] : x > h.hi * 1.15 ? ['High', 'mid'] : ['Normal', 'ok'] }
+        else if (gs) { [w, c] = gs === 'balanced' ? ['Normal', 'ok'] : gs === 'unbalanced' ? ['Off', 'mid'] : /low|poor/.test(gs) ? ['Low', 'lo'] : [gs[0].toUpperCase() + gs.slice(1), 'na'] }
+        else if (h && h.mode === 'early') { [w, c] = h.low ? ['Low', 'lo'] : ['Normal', 'ok'] }
+        else { w = 'Learning' } }
+      out.push(['HRV', typeof x === 'number' ? x + '<small>ms</small>' : '–', w, c]) }
+    { const x = v.restingHR; let w = '–', c = 'na';
+      if (typeof x === 'number') { let h = null; try { h = rhrState(d, x) } catch (e) {}
+        if (h && typeof h.up === 'number') { [w, c] = h.up >= 8 ? ['High', 'lo'] : h.up >= 5 ? ['Up', 'mid'] : ['Normal', 'ok'] } else w = 'Learning' }
+      out.push(['Rest HR', typeof x === 'number' ? x : '–', w, c]) }
+    { const x = v.bodyBattery; const [w, c] = typeof x !== 'number' ? ['–', 'na'] : x >= 60 ? ['Good', 'ok'] : x >= 30 ? ['Fair', 'mid'] : ['Low', 'lo'];
+      out.push(['Battery', typeof x === 'number' ? x : '–', w, c]) }
+    return out;
+  }
   function dayLine() {
-    const host = document.getElementById('view-today'), ready = document.getElementById('ready'); if (!host || !ready) return;
-    let el = document.getElementById('garday');
-    const G = (typeof garDay !== 'undefined' && garDay) || {}, t = G[isoD(today)] || {}, y = G[dayIso(today, -1)] || {};
-    const parts = [];
-    if (typeof t.steps === 'number') parts.push('<b>' + fmtN(t.steps) + '</b> steps today');
-    if (typeof y.steps === 'number') parts.push('yesterday ' + fmtN(y.steps) + ' steps' + (typeof y.kcalTotal === 'number' ? ', ' + fmtN(y.kcalTotal) + ' kcal' : '') + (typeof y.intensityMin === 'number' ? ', ' + y.intensityMin + ' intensity min' : ''));
-    const show = parts.length && isoD(sel) === isoD(today);
-    if (!show) { if (el) el.remove(); return }
-    if (!el) { el = document.createElement('p'); el.id = 'garday'; el.className = 'msg'; el.style.cssText = 'margin:0;font-size:14px;color:var(--muted)'; ready.parentNode.insertBefore(el, ready) }
-    const h = parts.join(' · ') + ' <small style="opacity:.8">· Garmin</small>';
+    const host = document.getElementById('view-today'), strip = document.getElementById('strip'); if (!host || !strip) return;
+    { const old = document.getElementById('garday'); if (old) old.remove() }
+    let el = document.getElementById('gbody');
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, td = isoD(today), t = G[td] || {}, y = G[dayIso(today, -1)] || {};
+    const connected = st ? !!st.connected : Object.keys(G).some(k => /^\d{4}/.test(k));
+    if (!connected) linkedUI(false);
+    if (!connected || isoD(sel) !== td || (typeof mode !== 'undefined' && (mode === 'live' || mode === 'feedback'))) { if (el) el.remove(); return }
+    const R = (typeof ready !== 'undefined' && ready) || {}, v = { ...t };
+    KEYS.forEach(([k]) => { if (typeof R[k] === 'number') v[k] = R[k] });               // what he typed wins
+    linkedUI(true);
+    if (!el) { el = document.createElement('section'); el.className = 'card'; el.id = 'gbody'; el.setAttribute('aria-label', 'Your body today'); strip.parentNode.insertBefore(el, strip.nextSibling) }
+    const lg = (typeof logs !== 'undefined' && logs && logs[td]) || {}, trained = /^(done|partial|skipped|recovery)$/.test(lg.status || '');
+    if (trained && !slimOpen) {                                    // after today's session: one line, tap for the full card
+      const T = tiles(v, G), stp = typeof t.steps === 'number' ? '<span class="na">' + fmtN(t.steps) + ' steps</span>' : '';
+      const sh = ['Sleep', 'HRV', 'RHR', 'Battery'].map((n, i) => String(T[i][1]) === '–' ? '' : '<span class="' + T[i][3] + '">' + n + ' ' + String(T[i][1]).replace(/<[^>]+>/g, '') + '</span>').join('') + stp;
+      const h1 = '<button type="button" class="sl" data-gs="1" aria-label="Your body today, show more">' + sh + '<small>›</small></button>';
+      el.classList.add('slim'); if (el.innerHTML !== h1) el.innerHTML = h1; return }
+    el.classList.remove('slim');
+    const at = t.at ? new Date(t.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase() : '';
+    let h = '<div class="bh"><b>Your body today</b><small>' + (at ? 'Updated ' + at : 'Waiting for your watch') + '</small></div><div class="bt">' +
+      tiles(v, G).map(([l, n, w, c]) => '<button type="button" class="t" data-gb="1"><span>' + l + '</span><b>' + n + '</b><em class="' + c + '">' + esc(w) + '</em></button>').join('') + '</div>';
+    { const days = []; for (let i = 1; i <= 7; i++) { const s = (G[dayIso(today, -i)] || {}).steps; if (typeof s === 'number' && s > 500) days.push(s) }
+      const avg = days.length >= 2 ? days.reduce((a, b) => a + b, 0) / days.length : null, st0 = t.steps;
+      if (typeof st0 === 'number' || avg) h += '<div class="bs"><small>Steps</small><b>' + (typeof st0 === 'number' ? fmtN(st0) : '–') + '</b>' +
+        (avg ? '<span class="bar" aria-hidden="true"><i style="width:' + Math.min(100, Math.round((st0 || 0) / avg * 100)) + '%"></i></span><small>usual ' + fmtN(Math.round(avg / 100) * 100) + '</small>' : '<small>steps today</small>') + '</div>' }
+    const sd = t.sleepDetail || {}, hasStg = STG.some(([k]) => typeof sd[k] === 'number');
+    const kv = [];
+    if (typeof y.steps === 'number') kv.push([fmtN(y.steps), 'steps']);
+    if (typeof y.kcalTotal === 'number') kv.push([fmtN(y.kcalTotal), 'kcal']);
+    if (typeof y.intensityMin === 'number') kv.push([y.intensityMin, 'intensity min']);
+    if (typeof y.stressAvg === 'number') kv.push([y.stressAvg, 'stress']);
+    const night = [];
+    if (typeof sd.spo2 === 'number') night.push('Blood oxygen <b>' + sd.spo2 + '%</b>');
+    if (typeof sd.resp === 'number') night.push('breathing <b>' + Math.round(sd.resp) + '</b>/min');
+    if (hasStg || kv.length) {
+      h += '<button type="button" class="more" data-gb="1" aria-expanded="' + bodyOpen + '">' + (bodyOpen ? 'Less ▴' : 'Sleep and yesterday ▾') + '</button>';
+      if (bodyOpen) {
+        h += '<div class="dt">';
+        if (hasStg) { const asleep = (sd.deepMin || 0) + (sd.remMin || 0) + (sd.lightMin || 0), short = typeof sd.needMin === 'number' ? sd.needMin - asleep : null;
+          h += '<div><h3>Last night<small>' + hm(asleep) + ' asleep' + (short != null && short >= 15 ? ', ' + hm(short).replace(/^0h /, '') + ' short' : '') + '</small></h3><div class="stg">' +
+            STG.filter(([k]) => sd[k] > 0).map(([k, , c]) => '<i style="flex:' + sd[k] + ';background:' + c + '"></i>').join('') + '</div><div class="lg">' +
+            STG.filter(([k]) => typeof sd[k] === 'number').map(([k, n, c]) => '<span><i style="background:' + c + '"></i>' + n + ' <b>' + hm(sd[k]).replace(/^0h /, '') + '</b></span>').join('') + '</div>' +
+            (night.length ? '<p>' + night.join(' · ') + '</p>' : '') + '</div>' }
+        if (kv.length) h += '<div><h3>Yesterday</h3><div class="kv">' + kv.map(([n, l]) => '<div><b>' + esc(n) + '</b><span>' + esc(l) + '</span></div>').join('') + '</div></div>';
+        h += '</div>';
+      }
+    }
     if (el.innerHTML !== h) el.innerHTML = h;
+  }
+  document.addEventListener('click', e => { if (!e.target.closest) return;
+    if (e.target.closest('#gbody [data-gs]')) { slimOpen = true; dayLine(); return }
+    const b = e.target.closest('#gbody [data-gb]'); if (!b) return; bodyOpen = !bodyOpen; dayLine() });
+  /* Garmin's all-day stress for yesterday, under the work-stress chips. A hint only: he taps the chip himself */
+  function band(v) { return v <= 25 ? 'resting' : v <= 50 ? 'low' : v <= 75 ? 'medium' : 'high' }
+  function stressHint() {
+    const row = document.getElementById('q-stress'); if (!row) return;
+    let el = document.getElementById('gstress');
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, y = G[dayIso(today, -1)] || {};
+    const show = typeof y.stressAvg === 'number' && isoD(sel) === isoD(today);
+    if (!show) { if (el) el.remove(); return }
+    if (!el) { el = document.createElement('small'); el.id = 'gstress'; el.style.cssText = 'display:block;margin-top:4px;color:var(--muted)'; row.parentNode.appendChild(el) }
+    const h = 'Garmin yesterday: ' + y.stressAvg + ' (' + band(y.stressAvg) + ')';
+    if (el.textContent !== h) el.textContent = h;
   }
   function weekCard() {
     const host = document.getElementById('view-prog'); if (!host) return;
@@ -616,8 +742,11 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
       '<table style="width:100%;font-size:14px;border-collapse:collapse"><thead><tr style="color:var(--muted);text-align:left"><th style="font-weight:500">Week of</th><th style="font-weight:500">Steps/day</th><th style="font-weight:500">Active kcal/day</th><th style="font-weight:500">Intensity min</th></tr></thead><tbody>' + rows + '</tbody></table>';
     if (c.innerHTML !== h) c.innerHTML = h;
   }
-  window.garDayChanged = () => { try { dayLine(); weekCard() } catch (e) {} };
+  window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} };
 
+  /* keep the check-in's labels right every time the page redraws it (after the page script has loaded) */
+  const wrapSV = () => { if (typeof window.showVerdict === 'function') { const sv = window.showVerdict; window.showVerdict = function () { const r = sv.apply(this, arguments); try { if (document.body.classList.contains('glinked')) linkedUI(true) } catch (e) {} return r } } };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wrapSV); else wrapSV();
   db().then(d => { if (!d) return;
     card();
     setInterval(window.garDayChanged, 4000);
@@ -2381,7 +2510,7 @@ function gFlags(r,day){const f=[],d=day||iso(sel);if(!r)return f;
   if(r.quick==='tired'&&!objFine(r,d))f.push(['trim','you said tired']);
   if(r.drinks==='5+')f.push(['trim','5+ drinks last night']);
   if(r.legs==='very'){let k0='';try{k0=effPlan(parse(d)).key}catch(_){}if(k0!=='U')f.push(['trim','legs very sore'])} /* sore legs don't trim an upper day */
-  if(r.stress==='high')f.push(['trim','high work stress']);
+  if(r.stress==='high')f.push(['trim',(r.auto||[]).includes('stress')?'Garmin stress high yesterday':'high work stress']);
   if(r.sleep==='<6')f.push(['trim','under 6 h sleep']);
   if(r.tr!=null&&r.tr<50)f.push(['trim','Training Readiness '+(r.trl||trBand(r.tr)).toLowerCase()]);
   if(typeof r.bodyBattery==='number'&&r.bodyBattery<30)f.push(['trim','Body Battery '+r.bodyBattery]);
@@ -3321,7 +3450,7 @@ function planFor(d){
   if(key==='G')return{key,type:'lift',title:'Light: calves, core & carries',ex:L(['Leg press calf raise',['Seated calf raise',2],['Tibialis raise',2],"Farmer's carry",'Hanging knee raise',['Pallof press',3],['Dead bug',3]]),checks:['20–25 min easy bike, rower or incline walk, 120–137 bpm','10 min hips and hamstrings stretch']};
   if(key==='F')return{key,type:'lift',title:'Light: arms, grip & flexibility',ex:L([['Preacher curl',3],['Cable triceps pushdown',3],['Cable lateral raise',2],'Active dead hang','Plate pinch','Reverse wrist curl','Band external rotation','Side plank']),checks:['20 min easy bike or rower, 120–137 bpm','15 min flexibility: hamstrings, couch stretch, 90/90, upper back']};
   if(key==='C'){if(w<=4)return{key,type:'cardio',title:'Easy cardio + core',run:{name:'Bike or incline walk',mins:30,hr:'120–137 bpm',info:'You should be able to talk in full sentences'}};
-    const n=(w===5||light(w))?3:4;return{key,type:'cardio',title:'4×4 intervals + core',run:{name:n+'×4 min hard',mins:15+n*7,hr:'165–174 bpm hard, ~128 easy',info:(w<=8?'Bike or steep incline':'Running')+'. 10 min warm-up, '+n+'×(4 min hard + 3 min easy), 5 min cool-down',iv:n}};}
+    const n=(w===5||light(w))?3:4;return{key,type:'cardio',title:'4×4 intervals + core',run:{name:n+'×4 min hard',mins:15+n*7,hr:'165–174 bpm hard, ~128 easy',info:(w<=8?'Any machine: bike, rower, treadmill or a run outside':'A run if you can, treadmill or outside; bike or rower also fine')+'. 10 min warm-up, '+n+'×(4 min hard + 3 min easy), 5 min cool-down',iv:n}};}
   if(key==='L')return{key,type:'cardio',title:'Long easy run',run:{name:'Long run',mins:longRun(w),hr:'120–137 bpm',info:'Easy and conversational. Walk breaks are fine'+(longRun(w)>=45?'. Bring water with electrolytes':'')}};
   if(key==='T')return w<=4?{key,type:'rest',title:'Rest + mobility',checks:['Couch stretch, 45 s per side','90/90 hip switches, 8 per side','Straight-leg raise, 8 per side','Calf stretch, 30 s each way']}:{key,type:'cardio',optional:true,title:'Optional easy cardio',run:{name:'Easy bike, walk or run, only if fresh',mins:easyRun(w),hr:'120–137 bpm',info:'Bike, incline walk or an easy run. Skip it if your legs are heavy: mobility instead'}};
   return{key,type:'rest',title:'Rest day',checks:['Easy walk, 20–30 min','Mobility routine, 10 min']};
@@ -4430,7 +4559,7 @@ function renderCardio(el){
   const PLc=phaseLook(cur);const heyX=cur.practice||cur.plan.optional?'<div class="hey">'+(cur.practice?'Practice':'Optional')+'</div>':'';
   let h=(cur.practice?'<div class="note trim">Practice: '+DN[parse(cur.date).getDay()]+' '+esc(cur.title)+' from week '+cur.week+'. Nothing is saved, so tap around freely and hit Save to see the finish. <button class="morebtn" id="pxit" style="display:inline;min-height:0">Leave practice</button></div>':'')+
     phaseOpen(PLc)+heyX+'<h1 class="ht" style="--fit:'+fitW(cur.title)+'">'+esc(cur.title)+'</h1><div class="metas"><span>'+r.mins+' min</span><span>'+esc(r.hr)+'</span></div><div style="font-size:14px;color:var(--hero-muted)">'+esc(r.info)+'</div>'+
-    (pre?'<button class="primary" id="startR">Start '+esc(CMODE_N[d.mode]||'session')+'</button>'+(!cur.express?'<button class="tired" id="expressR">Tired? Express · 20 min easy</button>':'')+'<div class="hlinks"><button id="logR">Already done? Log it</button><button id="skipR0">Skip</button></div>':'')+'</section>'+
+    (pre?'<button class="primary" id="startR">Start session</button>'+(!cur.express?'<button class="tired" id="expressR">Tired? Express · 20 min easy</button>':'')+'<div class="hlinks"><button id="logR">Already done? Log it</button><button id="skipR0">Skip</button></div>':'')+'</section>'+
     (!future&&!logOpen?'<section class="card cmodes"><div class="q"><span>Doing it on</span><div class="chips">'+CMODES.map(([v,t])=>'<button class="chip" data-cm="'+v+'" aria-pressed="'+(d.mode===v)+'">'+t+'</button>').join('')+'</div></div></section>':'')+
     (r.coach?coachRunHtml(r):'')+(noteHtml()?'<section class="card">'+noteHtml()+'</section>':'');
   const wireModes=()=>{const mc=el.querySelector('.cmodes');if(mc)mc.addEventListener('click',e=>{const b=e.target.closest('[data-cm]');if(!b)return;d.mode=b.dataset.cm;persist();renderSession()})};
@@ -5063,6 +5192,9 @@ function stvHtml(date){if(!mcp&&!strava[date])return'';const s=strava[date],A=(s
   if(!A.length){if(!stvErr)return'';const[t,b]=stvErrTxt();if(!t)return'';return hd+'<p class="msg" style="margin:0">'+esc(t)+'</p>'+(b?'<button class="morebtn" data-stvgo="1">'+esc(b)+'</button>':'')+'</div>'}
   let h=hd;A.forEach(a=>{const t=/T\d\d:\d\d/.test(a.start)?a.start.slice(11,16):'';
     h+='<div class="stvr"><span>'+esc(stvName(a))+'<small>'+esc(t)+'</small></span><span class="num">'+[a.mins+' min',a.km?a.km+' km':'',a.pace?a.pace+' /km':'',a.hr?'avg HR '+a.hr:'',a.maxHr?'max '+a.maxHr:'',a.kcal?a.kcal+' kcal':''].filter(Boolean).map(x=>esc(x).replace(/ /g,'&nbsp;')).join(' · ')+'</span></div>';
+    {const L=v=>v<1?'none':v<2?'minor':v<3?'maintaining':v<4?'improving':v<5?'highly improving':'overreaching',x=[];
+      if(typeof a.te==='number')x.push('Effect '+a.te+' '+L(a.te)+(a.ate>=1?' · anaerobic '+a.ate:''));if(a.ws&&a.ws.sets>0)x.push('watch counted '+a.ws.sets+' sets');
+      if(x.length)h+='<div class="stvl num">'+esc(x.join(' · '))+'</div>'}
     if(a.hz&&typeof a.hz==='object')h+='<div class="stvl num">Heart-rate zones: '+[[a.hz.easy,'easy (≤137)'],[a.hz.mid,'moderate'],[a.hz.hard,'hard (165+)']].filter(([v])=>+v>=0.5).map(([v,t])=>esc(Math.round(+v)+' min '+t)).join(' · ')+'</div>';
     if(Array.isArray(a.laps)&&a.laps.length)h+='<div class="stvl num">Each km, pace (avg HR): '+a.laps.map(l=>esc((l.pace||'–')+(l.hr?' ('+l.hr+')':''))).join(' · ')+'</div>'});
   return h+'</div>'}
@@ -5412,16 +5544,16 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
      return{weight:thin.map(w=>({date:w.date,kg:w.kg})),weight_entries:W.length,first:W[0]||null,latest:W[W.length-1]||null,
        checkins:(tests||[]).map(t=>{const o={date:t.date};['kg','waist','gripL','gripR','id'].forEach(k=>{if(t[k]!=null)o[k]=t[k]});return o}),
        targets:blockRep&&blockRep.targets?blockRep.targets:(targets||null)}}},
-  {name:'cardio',description:'Cardio between two dates: his logged cardio sessions plus watch activities synced from Strava/Garmin (type, minutes, average and max heart rate, km, % easy).',
+  {name:'cardio',description:'Cardio between two dates: his logged cardio sessions plus watch activities synced from Strava/Garmin (type, minutes, average and max heart rate, km, kcal, % easy, Garmin training effect 0–5 aerobic/anaerobic, the watch\'s own set count, which is only a rough guess).',
    inputSchema:{type:'object',properties:{from:{type:'string'},to:{type:'string'}},required:['from']},
    execute(a){const f=String(a.from||'').slice(0,10),t=String(a.to||iso(today)).slice(0,10),out=[];
      Object.keys(logs).filter(k=>k>=f&&k<=t).sort().forEach(k=>{const l=logs[k];if(l&&l.run&&l.run.done&&l.run.done.mins)out.push({date:k,source:'app',title:l.title,mins:l.run.done.mins,hr:l.run.done.hr||null,km:l.run.done.km||null,mode:l.run.done.mode||null})});
-     Object.keys(strava||{}).filter(k=>k>=f&&k<=t).sort().forEach(k=>{(strava[k].acts||[]).forEach(v=>out.push({date:k,source:'watch',type:v.type||v.name,mins:v.mins,hr:v.hr||null,maxHr:v.maxHr||null,km:v.km||null,pctEasy:v.hz&&v.hz.pctEasy!=null?v.hz.pctEasy:null}))});
+     Object.keys(strava||{}).filter(k=>k>=f&&k<=t).sort().forEach(k=>{(strava[k].acts||[]).forEach(v=>out.push({date:k,source:'watch',type:v.type||v.name,mins:v.mins,hr:v.hr||null,maxHr:v.maxHr||null,km:v.km||null,kcal:v.kcal||null,pctEasy:v.hz&&v.hz.pctEasy!=null?v.hz.pctEasy:null,trainingEffect:v.te!=null?v.te:null,anaerobicEffect:v.ate!=null?v.ate:null,watchSets:v.ws?v.ws.sets:null}))});
      return{from:f,to:t,rows:out.slice(-80)}}},
-  {name:'readiness',description:'His morning check-ins between two dates: how he felt, legs, stress, HRV, resting HR, sleep, sleep score, Body Battery, Training Readiness, and the verdict.',
+  {name:'readiness',description:'His morning check-ins between two dates: how he felt, legs, stress, HRV, resting HR, sleep, sleep score, Body Battery, Training Readiness, the verdict, plus Garmin sleep detail (deep, REM, awake minutes, sleep need, blood oxygen, breathing) and that day\'s Garmin stress average (0–100; partial for today).',
    inputSchema:{type:'object',properties:{from:{type:'string'},to:{type:'string'}},required:['from']},
    execute(a){const f=String(a.from||'').slice(0,10),t=String(a.to||iso(today)).slice(0,10);
-     const rows=Object.keys(logs).filter(k=>k>=f&&k<=t).sort().map(k=>{const r=(logs[k]||{}).readiness;if(!r)return null;const o={date:k};['quick','legs','stress','hrv','restingHR','sleep','sleepScore','bodyBattery','tr','verdict','override','autoVerdict','auto'].forEach(x=>{if(r[x]!=null&&r[x]!=='')o[x]=r[x]});return o}).filter(Boolean);
+     const rows=Object.keys(logs).filter(k=>k>=f&&k<=t).sort().map(k=>{const r=(logs[k]||{}).readiness;if(!r)return null;const o={date:k};['quick','legs','stress','hrv','restingHR','sleep','sleepScore','bodyBattery','tr','verdict','override','autoVerdict','auto'].forEach(x=>{if(r[x]!=null&&r[x]!=='')o[x]=r[x]});const g=garDay[k]||{};if(g.sleepDetail)o.garminSleep=g.sleepDetail;if(typeof g.stressAvg==='number')o.garminStressAvg=g.stressAvg;return o}).filter(Boolean);
      return{from:f,to:t,rows:rows.slice(-60)}}},
   {name:'ask_coach',description:'Pass a request to his 6:30am coach for anything you can\'t change yourself (future weeks, plan structure, phases, deloads, targets, new goals). The coach reads it the next morning. Applies at once.',
    inputSchema:{type:'object',properties:{text:{type:'string',description:'the request in his words, one or two sentences'}},required:['text']},
