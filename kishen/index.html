@@ -5803,6 +5803,109 @@ try{
 })();
 }catch(e){console.error(e)}
 ;
+try{
+/* UX upgrade stage 2 (19 Nov 2026, from the Motion Demo he approved 18 Nov): the workout moves.
+   Gym (one-at-a-time) screen and the Normal list view; only motion: nothing about logging changes.
+   - Start: the workout settles in from the Today card.
+   - Set done → rest: the ring grows in, the logged set drops into place, haptic tap.
+   - Rest over → next set: the set screen slides in from the right.
+   - Next exercise: a longer slide, the name first, then the rest staggered.
+   - Last 5 s of rest: the Up next card lifts and counts down.
+   - Set done with a box empty: the boxes shake (the app's own hint still shows).
+   - Both boxes filled: the Set done button glows once.
+   Normal view (his question, 19 Nov): the list settles in on Start, the rest bar slides up, a finished exercise
+   folds into its done row and the next one opens with a slide, a tick with an empty box shakes that row.
+   Reduced motion: none of it, just the screens. */
+(function(){
+  const css=`#session #gym.ux2-start{animation:ux2start .42s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-start>.gtop{animation:ux2down .42s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-set>:not(.gtop):not(.gov){animation:ux2side .34s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-ex>:not(.gtop):not(.gov){animation:ux2far .44s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-ex>:nth-child(n+3):not(.gov){animation-delay:.05s}#session #gym.ux2-ex>:nth-child(n+5):not(.gov){animation-delay:.1s}
+#session #gym.ux2-rest .glog{animation:ux2drop .34s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-rest .gring{animation:ux2ring .5s cubic-bezier(.23,1,.32,1) .04s both}
+#session #gym.ux2-rest .grb,#session #gym.ux2-rest .gup{animation:ux2up .4s cubic-bezier(.23,1,.32,1) .12s both}
+#session #gym .gup{position:relative;transition:transform .35s cubic-bezier(.23,1,.32,1),box-shadow .35s cubic-bezier(.23,1,.32,1)}
+#session #gym .gup .ux2n{display:none;position:absolute;right:12px;top:calc(50% - 20px);width:40px;height:40px;border-radius:50%;place-items:center;font-weight:800;font-size:17px;font-variant-numeric:tabular-nums;color:var(--accent);background:conic-gradient(var(--accent) calc(var(--p,0)*1turn),var(--soft) 0)}
+#session #gym .gup .ux2n::before{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--card)}
+#session #gym .gup .ux2n b{position:relative}
+#session #gym .gup.soon{transform:translateY(-4px);box-shadow:0 14px 30px -14px rgba(0,0,0,.45),inset 0 0 0 1.5px var(--accent)}
+#session #gym .gup.soon .ux2n{display:grid;animation:ux2pop .3s cubic-bezier(.23,1,.32,1) both}
+#session #gym .gin.ux2-shake{animation:ux2shake .32s ease-in-out}
+#session #gym .ggo{transition:transform .12s ease-out}
+#session #gym .ggo:active{transform:scale(.97)}
+#session #gym .ggo.ux2-glow{animation:ux2glow .9s ease-out 1}
+#session #gym .gdots .ok.ux2-pop{animation:ux2dot .36s cubic-bezier(.23,1,.32,1)}
+#session.ux2-lstart .exc,#session.ux2-lstart .exmini{animation:ux2up .4s cubic-bezier(.23,1,.32,1) both}
+#session.ux2-lstart .exmini:nth-of-type(n+2){animation-delay:.04s}#session.ux2-lstart .exmini:nth-of-type(n+3){animation-delay:.08s}#session.ux2-lstart .exmini:nth-of-type(n+4){animation-delay:.12s}
+#session .exmini.ux2-fold{animation:ux2fold .38s cubic-bezier(.23,1,.32,1) both}
+#session .exc.ux2-open{animation:ux2side .4s cubic-bezier(.23,1,.32,1) .08s both}
+#session .sr.ux2-shake{animation:ux2shake .32s ease-in-out}
+#restbar.ux2-rb{animation:ux2rb .38s cubic-bezier(.23,1,.32,1) both}
+@keyframes ux2fold{from{opacity:.4;transform:scaleY(1.6);transform-origin:top}}
+@keyframes ux2rb{from{transform:translateY(100%)}}
+@keyframes ux2start{from{opacity:0;transform:scale(.96) translateY(10px)}}
+@keyframes ux2down{from{opacity:0;transform:translateY(-10px)}}
+@keyframes ux2side{from{opacity:0;transform:translateX(26px)}}
+@keyframes ux2far{from{opacity:0;transform:translateX(56px)}}
+@keyframes ux2drop{from{opacity:0;transform:translateY(-12px)}}
+@keyframes ux2ring{from{opacity:0;transform:scale(.88)}}
+@keyframes ux2up{from{opacity:0;transform:translateY(12px)}}
+@keyframes ux2pop{from{opacity:0;transform:scale(.7)}}
+@keyframes ux2dot{40%{transform:scale(1.18)}}
+@keyframes ux2shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@keyframes ux2glow{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--st-go,#1ea381) 60%,transparent)}100%{box-shadow:0 0 0 16px transparent}}
+@media (prefers-reduced-motion:reduce){#session #gym *,#session #gym,#session .exc,#session .exmini,#session .sr,#restbar{animation:none!important;transition:none!important}}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const RMq=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){return false}};
+  const buzz=p=>{try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}};
+  /* what the gym screen showed: which exercise, resting or not, how many sets ticked */
+  function look(){const g=document.getElementById('gym');if(!g||typeof cur!=='object'||!cur)return{mode:typeof mode!=='undefined'?mode:null,gym:false};
+    const L=cur.exercises||[],e=L[GYM.cur];return{mode,gym:true,ex:GYM.cur,obj:GYM.obj,rest:!!document.getElementById('gymrest'),done:e?e.sets.filter(z=>z.done).length:0}}
+  function play(kind){const g=document.getElementById('gym');if(!g||RMq())return;['ux2-start','ux2-set','ux2-ex','ux2-rest'].forEach(c=>g.classList.remove(c));void g.offsetWidth;g.classList.add('ux2-'+kind);
+    clearTimeout(play.t);play.t=setTimeout(()=>{const h=document.getElementById('gym');if(h){h.classList.remove('ux2-'+kind);if(!h.className)h.removeAttribute('class')}},700)}
+  /* Normal view: which exercises are folded as done */
+  function lookL(){const el=document.getElementById('session');if(!el||document.getElementById('gym')||typeof mode==='undefined'||mode!=='live')return null;
+    if(!el.querySelector('.exc,.exmini'))return null;return{done:new Set([...el.querySelectorAll('.exmini.done .exn')].map(n=>n.textContent))}}
+  function lplay(a,b){if(RMq())return;const el=document.getElementById('session');
+    if(!a){el.classList.remove('ux2-lstart');void el.offsetWidth;el.classList.add('ux2-lstart');clearTimeout(lplay.t);lplay.t=setTimeout(()=>{el.classList.remove('ux2-lstart');if(!el.className)el.removeAttribute('class')},700);return}
+    const fresh=[...el.querySelectorAll('.exmini.done')].filter(m=>{const n=m.querySelector('.exn');return n&&!a.done.has(n.textContent)});
+    if(fresh.length){fresh.forEach(m=>m.classList.add('ux2-fold'));const o=el.querySelector('.exc.focus');if(o)o.classList.add('ux2-open')}}
+  const rs=renderSession;renderSession=function(){const a=look(),al=lookL();
+    const r=rs.apply(this,arguments);
+    try{const bl=lookL();if(bl)lplay(al,bl)}catch(e){}
+    try{const b=look();if(b.gym){
+      if(!a.gym)play('start');
+      else if(a.gym&&b.obj!==a.obj)play('ex');
+      else if(a.gym&&!a.rest&&b.rest)play('rest');
+      else if(a.gym&&a.rest&&!b.rest)play('set');   /* the app itself says "Rest over · next set" */
+      else if(a.gym&&b.done>a.done)play('set');
+      if(b.done>a.done){const d=document.querySelectorAll('#gym .gdots .ok');const last=d[d.length-1];if(last&&!RMq())last.classList.add('ux2-pop')}
+      upnext()}}catch(e){}
+    return r};
+  /* the Up next card lifts and counts down in the last 5 s of rest */
+  function upnext(){const u=document.querySelector('#gym .gup');if(!u||typeof rest!=='object'||!rest.on)return;
+    if(!u.querySelector('.ux2n')){const n=document.createElement('span');n.className='ux2n';n.setAttribute('aria-hidden','true');n.innerHTML='<b></b>';u.appendChild(n)}
+    const left=(rest.end-Date.now())/1000,soon=left<=5&&left>0;u.classList.toggle('soon',soon);
+    if(soon){const n=u.querySelector('.ux2n');n.style.setProperty('--p',String(Math.max(0,Math.min(1,left/5))));n.querySelector('b').textContent=String(Math.ceil(left))}}
+  setInterval(()=>{if(document.getElementById('gymrest'))upnext()},200);
+  {const rb=document.getElementById('restbar');if(rb&&window.MutationObserver){let was=rb.hidden;new MutationObserver(()=>{if(was&&!rb.hidden&&!RMq()){rb.classList.remove('ux2-rb');void rb.offsetWidth;rb.classList.add('ux2-rb')}was=rb.hidden}).observe(rb,{attributes:true,attributeFilter:['hidden']})}}
+  /* Normal view: a tick with an empty box shakes that row */
+  document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#session .sr button.ok[data-a="ok"]');if(!b||document.getElementById('gym'))return;const row=b.closest('.sr');if(!row||row.classList.contains('done'))return;
+    const empty=[...row.querySelectorAll('input.cell')].some(i=>!String(i.value).trim());
+    if(empty&&!RMq()){setTimeout(()=>{const r2=document.querySelector('#session .sr button.ok[data-e="'+b.dataset.e+'"][data-s="'+b.dataset.s+'"]');const rw=r2&&r2.closest('.sr');if(!rw)return;rw.classList.remove('ux2-shake');void rw.offsetWidth;rw.classList.add('ux2-shake')},0);buzz([20,40,20])}},true);
+  /* Set done with an empty box: shake the boxes (the app still says which one) */
+  document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#gym .ggo[data-a="ok"]');if(!b)return;const gi=document.querySelector('#gym .gin');if(!gi)return;
+    const empty=[...gi.querySelectorAll('input')].some(i=>!String(i.value).trim());
+    if(empty&&!RMq()){setTimeout(()=>{const g2=document.querySelector('#gym .gin');if(!g2)return;g2.classList.remove('ux2-shake');void g2.offsetWidth;g2.classList.add('ux2-shake')},0);buzz([20,40,20])}},true);
+  /* both boxes filled: the Set done button glows once */
+  document.addEventListener('focusout',e=>{const t=e.target;if(!t||!t.closest||!t.closest('#gym .gin'))return;
+    setTimeout(()=>{const gi=document.querySelector('#gym .gin'),go=document.querySelector('#gym .ggo[data-a="ok"]');if(!gi||!go||RMq())return;
+      const all=[...gi.querySelectorAll('input')].every(i=>String(i.value).trim());if(all&&!gi.contains(document.activeElement)){go.classList.remove('ux2-glow');void go.offsetWidth;go.classList.add('ux2-glow')}},60)},true);
+  window.UX2={play};
+})();
+}catch(e){console.error(e)}
+;
 const APP_NAME='kishen',APP_VER='k202';
 try{
 /* ===== Reliability (18 Nov 2026, plan step 2), shared by both apps =====
