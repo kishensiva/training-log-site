@@ -547,7 +547,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
       if (!key) { inp.focus(); return }
       const go = b('save'); go.disabled = true; go.textContent = 'Checking with Garmin…';
       try { const r = await window.sbFn('garmin', { action: 'setkey', key, expires: exp, date: isoD(today) }); inp.value = '';
-        tell(r.tokenOk ? 'Garmin connected' : 'Key saved. Garmin didn’t answer yet; it will retry'); filledFor = ''; lastFill = 0; await card(); fill(r.values) }
+        tell(r.tokenOk ? 'Garmin connected' : 'Key saved. Garmin didn’t answer yet; it will retry'); filledFor = ''; lastFill = 0; await card(); fill(r.values, true) }
       catch (e) { go.disabled = false; go.textContent = 'Connect Garmin'; tell(e && e.code === 'bad_key' ? 'Garmin didn’t accept that key. Copy it again and paste it' : 'Couldn’t reach the server. Try again') } };
     if (b('cancel')) b('cancel').onclick = () => card();
     if (b('replace')) b('replace').onclick = () => card('form');
