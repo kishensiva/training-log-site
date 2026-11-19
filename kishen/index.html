@@ -620,6 +620,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
 #gbody .sl span.ok:before{background:var(--gold)}#gbody .sl span.mid:before{background:var(--warn)}#gbody .sl span.lo:before{background:var(--miss)}#gbody .sl small{color:var(--muted);font-size:13px;margin-left:auto}
 body.glinked #gnudge,body.glinked #snapwrap,body.glinked .uxrow[data-uxg],body.glinked #readyToggle,body.glinked #gfixb{display:none!important}
 body.glinked #ready .q{display:none}
+body.glinked #ready.gempty{display:none}
 #ready .gfixb{display:none;background:none;border:0;color:var(--muted);font:600 13px var(--body,inherit);min-height:40px;padding:0;align-self:flex-start;text-decoration:underline;text-underline-offset:3px}
 body.glinked #ready:not(.collapsed) .gfixb{display:block}
 #gbody .kv b{font-size:17px;font-variant-numeric:tabular-nums}#gbody .kv span{font-size:12px;color:var(--muted)}`;
@@ -636,6 +637,9 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     if (!document.getElementById('gfixb')) { const b = document.createElement('button'); b.type = 'button'; b.id = 'gfixb'; b.className = 'gfixb'; b.textContent = 'Fix a Garmin number';
       const dr = document.getElementById('q-drinks'), q = dr && dr.closest('.q'); if (q) q.after(b);
       b.onclick = () => { r.classList.toggle('gfix'); b.textContent = r.classList.contains('gfix') ? 'Hide the numbers' : 'Fix a Garmin number' } }
+    /* with the number boxes gone the card can end up with nothing showing (feeling answered, no call to make): then hide it */
+    r.classList.remove('gempty');                                // measure with the card showing, then hide it again if empty (no flicker: same frame)
+    if (on && !r.hidden) { const kids = [...r.children].filter(c => c.offsetParent !== null && c.offsetHeight > 0); if (!kids.length) r.classList.add('gempty') }
     const tg = document.getElementById('readyToggle');
     if (tg && on) { const op = typeof readyOpen !== 'undefined' && readyOpen; const want = op ? 'Less' : 'Legs and drinks'; if (tg.textContent !== want) tg.textContent = want; tg.hidden = false }
   }
@@ -3694,6 +3698,8 @@ function showVerdict(){
   {const QW={good:'good',meh:'not feeling it',tired:'tired',wrecked:'wrecked'},ans=!!(ready.quick&&QW[ready.quick])&&!feelEdit;
    $('ready').classList.toggle('answered',ans);$('feelsum').hidden=!ans;if(ans)$('feelword').textContent=QW[ready.quick]}
   if(pp.pre||(pp.type==='rest'&&!pp.optional)){b.textContent=pp.pre?'Baseline':'Rest day';b.className='badge rest';$('verdict').hidden=true;return}
+  /* he already made today a recovery day with Odysseus: the numbers' go/trim box would contradict the session card, so it steps aside */
+  if(cur&&cur.date===iso(sel)&&cur.recoverOf&&cur.chatWhy!==undefined&&!ready.override){b.textContent='Recover';b.className='badge recover';$('verdict').hidden=true;return}
   if(!v){b.textContent='Optional';b.className='badge open';$('verdict').hidden=true;return}
   const g=gFlags(ready),push=v==='go'&&ready.tr>=75&&ready.legs==='no'&&!g.length;
   b.textContent=push?'Go hard':v==='go'?'Go':v==='trim'?'Trim':'Recover';b.className='badge '+v;
@@ -3748,12 +3754,16 @@ function renderSession(){if(cur&&cur.week)setPhase(cur.week);try{if(cur&&!['done
   if(iso(sel)===iso(today)&&mode!=='live'&&mode!=='feedback'&&!(cur.type==='cardio'&&cur.status==='in_progress'))el.insertAdjacentHTML('beforeend',nightBtnHtml());
   if(iso(sel)===iso(today)&&mode!=='live'&&mode!=='feedback'){const ph=parkedHtml();if(ph)el.insertAdjacentHTML('afterbegin',ph)}
 }
+/* the 6:27am note is about the session the coach planned: hide it once the day became something else
+   (recovery from the check-in or Odysseus, travel, a moved session), so the card never describes a workout he isn't doing */
+function coachNoteFits(){if(!(coach&&cur&&coach.date===iso(sel)&&coach.note))return false;if(coach.rest)return cur.type==='rest'; /* the coach's own rest-day note fits a rest day */
+  return!cur.recoverOf&&!cur.travel&&cur.type!=='rest'&&!(coach.key&&cur.key&&coach.key!==cur.key)}
 function noteHtml(){
   const n=[],lg=cur&&cur.practice?{}:(logs[iso(sel)]||{}),v=lg.readiness&&lg.readiness.verdict;let cls='';
   if(cur&&cur.practice)n.push('Practice: '+esc(cur.title)+' as it will look on '+DN[parse(cur.date).getDay()]+' '+short(parse(cur.date))+'. Nothing is saved.');
-  if(coach&&coach.date===iso(sel)&&coach.note)n.push(esc(coach.note)+(Array.isArray(coach.evidence)?' '+coach.evidence.filter(x=>typeof x==='string'&&evFind(x)).slice(0,3).map(x=>evb(x,evFind(x).title)).join(' '):''));
+  if(coachNoteFits())n.push(esc(coach.note)+(Array.isArray(coach.evidence)?' '+coach.evidence.filter(x=>typeof x==='string'&&evFind(x)).slice(0,3).map(x=>evb(x,evFind(x).title)).join(' '):''));
   if(v==='trim'&&cur.type==='lift'){n.push((lg.readiness&&lg.readiness.override?'Trimmed, your call':'Trimmed from your check-in')+': one less set, no weight increases.');cls='trim'}
-  if(cur.recoverOf){n.push((lg.readiness&&lg.readiness.override?'Recovery day, your call. ':'Recovery day from your check-in. ')+esc(cur.recoverOf)+' moves to another day.');cls='recover'}
+  if(cur.recoverOf){const own=(lg.readiness&&lg.readiness.override)||cur.chatWhy!==undefined;n.push((own?'Recovery day, your call. ':'Recovery day from your check-in. ')+'Your coach will look for another day for '+esc(cur.recoverOf.replace(/ · Express$/,''))+'.');cls='recover'}
   if(cur.type==='lift'&&cur.week>=1){const lightDay=cur.key==='G'||cur.key==='F',rt=rirT(cur.week),lr=Math.max(1,rt-1),lowerDay=!lightDay&&(cur.exercises||[]).some(e=>LEGM.includes(((X[e.name]||{}).m||[])[0]));
     {const ph=PHASE(cur.week);n.push(lightDay&&ph!=='del'?'Light session: the same rep ranges every week, whatever the block. The easy cardio and stretching are in the tick list at the end.':ph==='str'?'Strength block: main lifts 6–8 reps with 3 min rest, everything else as usual. '+evb('phases','Why?'):ph==='del'?'Deload week: half the sets, about 10% lighter, nothing hard. You come back fresher for the next block. '+evb('deload','Why?'):'Hypertrophy block: 8–12 reps on the main lifts, 12–15 on isolation. '+evb('phases','Why?'))}
     n.push('Effort: stop about '+rt+' rep'+(rt>1?'s':'')+' short of failure. '+evb('rir'));
@@ -3784,7 +3794,7 @@ function renderPreview(el){
   if(rd.quick==='tired'&&!cur.practice)h+='<div class="hb">Tired today. Express is the smart call: 25 minutes, streak safe.</div>';
   if(lightDay)h+='<div class="hb">After the lifts: '+cur.checks.map(esc).join(', then ')+'. Tick them off at the end.</div>';
   {const kt=e=>{const ws=e.sets.filter(q=>q.t!=='W'),x=X[e.name]||{};return x.bw||(x.add&&!+kgOf(ws[0]))?'BW':!+kgOf(ws[0])?'New':(x.add?'+':'')+kgOf(ws[0])+' kg'},lg0=cur.practice?{}:(logs[iso(sel)]||{}),rt=w>=1?rirT(w):null;
-   if(coach&&coach.date===iso(sel)&&coach.note&&!cur.practice)h+='<div class="hb">'+esc(coach.note)+'</div>';
+   if(coachNoteFits()&&!cur.practice)h+='<div class="hb">'+esc(coach.note)+'</div>';
    if(lg0.readiness&&lg0.readiness.verdict==='trim')h+='<div class="hb">Trimmed from your check-in: one less set, no weight increases.</div>';
    h+='<button type="button" class="plantg" id="planTg" aria-expanded="'+planOpen+'"><span><b>'+ex.slice(0,2).map(e=>esc(e.name)+' '+kt(e)).join(' · ')+'</b>'+(ex.length>2?'+ '+(ex.length-2)+' more · ':'')+(PL?esc(PL.note):w>=1?esc(PHN[PHASE(w)]||'')+' block':'the plan')+'</span><span aria-hidden="true">'+(planOpen?'▴':'▾')+'</span></button>';
    if(planOpen)h+='<div class="planl">'+ex.map(e=>{const ws=e.sets.filter(q=>q.t!=='W'),x=X[e.name]||{};return'<div><b>'+esc(e.name)+'</b><span>'+ws.length+'×'+x.lo+(x.hi!==x.lo?'–'+x.hi:'')+(x.unit==='m'?' m':x.unit==='s'?' s':'')+' · '+kt(e)+(/^↑/.test(e.why)?' ↑':'')+'</span></div>'}).join('')+'</div>'+
