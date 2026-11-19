@@ -370,6 +370,11 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     })());
   }
   window.stravaConnect = stravaConnect;
+  /* call one of the app's own server helpers (functions/<name>) as the signed-in user; Garmin link uses it */
+  window.sbFn = async (name, body) => {
+    const { data: { session } } = await sb.auth.getSession(); if (!session) throw { code: 'not_signed_in' };
+    const r = await fetch(URL0 + '/functions/v1/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: KEY, Authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(Object.assign({ app: APP }, body)) });
+    const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign({ status: r.status }, j); return j };
 
   const user = { isOwner: () => true, canEdit: () => true, can: () => true, id: async () => uid, me: async () => ({ id: uid, name: '' }), profiles: async () => ({}), search: async () => [] };
   const downloads = { save: async ({ filename, data }) => { const b = data instanceof Blob ? data : new Blob([data]); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = filename || 'download'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000) } };
@@ -478,6 +483,281 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     setTimeout(offer, 5000);
   });
   window.NPUSH = { offer, card, turnOn };
+})();
+
+</script><script>
+/* Garmin link (19 Nov 2026, Kishen's app only). Garmin's official Personal API, through functions/garmin.
+   - Progress → Body: a "Garmin link" card. He pastes his Personal API key there once; it goes straight to the
+     server's locked table and is never kept in the page, the phone or the chat.
+   - Today: when today's check-in is open, any empty box among HRV, resting HR, Body Battery and sleep score is
+     filled from Garmin and saved. Numbers he typed himself are never replaced. Training Readiness stays manual
+     (the Personal API doesn't offer it).
+   - The server also pulls at 6:05 and 6:20am into garmin/<date> so the 6:27am coach has the numbers first.
+   - 19 Nov: steps, calories and intensity minutes on Today (one line) and Progress → Training (4-week card). These come
+     only from Garmin, so nothing is counted twice; workouts are merged with Strava's in the page itself (stvMerge). */
+(function () {
+  if (window.WEB_APP !== 'kishen') return;
+  const KEYS = [['hrv', 'HRV'], ['restingHR', 'resting HR'], ['bodyBattery', 'Body Battery'], ['sleepScore', 'sleep score']];
+  /* Garmin's all-day stress (0–100) for yesterday → the stress chip. Over 60 counts as high (his cut-off, 19 Nov) */
+  const stressChip = v => v > 60 ? 'high' : v > 25 ? 'normal' : 'low';
+  const db = () => window.claude.use('db');
+  const tell = t => { try { toast(t) } catch (e) {} };
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const isoD = d => { try { return iso(d) } catch (e) { return '' } };
+  let st = null, lastFill = 0, filling = false, filledFor = '';
+
+  const css = `#garcard .msg{margin:0}#garcard .grow{display:flex;flex-direction:column;gap:8px}
+#garcard label small{display:block;color:var(--muted);font-size:13px;margin-bottom:4px}
+#garcard input{width:100%;box-sizing:border-box;min-height:46px;border-radius:12px;border:1px solid var(--line);background:var(--soft);color:var(--fg);font:16px var(--body,inherit);padding:0 12px}
+#garcard .gb{display:flex;gap:8px;flex-wrap:wrap}#garcard .gb button{flex:1;min-height:46px;border-radius:999px;border:0;background:var(--soft);color:var(--fg);font:600 15px var(--body,inherit);text-transform:none;letter-spacing:0}
+#garcard .gb button.go{background:var(--fg);color:var(--bg)}#garcard .gb button:disabled{opacity:.6}
+#garcard .gst{display:flex;align-items:center;gap:8px;font-size:15px}#garcard .gst i{width:9px;height:9px;border-radius:50%;background:var(--done);flex:none}
+#garcard .gst i.off{background:var(--muted)}#garcard .gst i.bad{background:var(--miss)}#garcard .gsub{color:var(--muted);font-size:13px;margin:2px 0 0}`;
+  const se = document.createElement('style'); se.textContent = css; document.head.appendChild(se);
+
+  async function loadStatus() { try { const d = await db(); const g = await d.doc('garmin/status').get(); st = g.exists ? g.data() : null } catch (e) {} return st }
+  const fmtDay = s => { try { return new Date(s + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) } catch (e) { return s } };
+  const fmtWhen = s => { try { const d = new Date(s); return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }) } catch (e) { return '' } };
+  const errText = e => e === 'bad_key' ? 'Garmin turned the key down. It may have expired: make a new one and replace it.'
+    : e === 'rate_limited' ? 'Garmin asked us to slow down. It will try again later.'
+    : e === 'no numbers yet' ? 'Nothing from last night yet. Open Garmin Connect so your watch syncs.'
+    : e ? 'Garmin didn’t answer last time. It will try again.' : '';
+
+  function daysLeft(d) { if (!d) return null; return Math.round((Date.parse(d + 'T00:00:00+08:00') - Date.now()) / 864e5) }
+
+  async function card(mode) {
+    const host = document.getElementById('view-prog'); if (!host) return;
+    let c = document.getElementById('garcard');
+    if (!c) { c = document.createElement('section'); c.className = 'card'; c.id = 'garcard'; c.dataset.pg = 'body'; c.setAttribute('aria-labelledby', 'garh'); host.appendChild(c) }
+    if (mode !== 'form') await loadStatus();
+    let h = '<h2 id="garh">Garmin link</h2>';
+    if (mode === 'form' || !st || !st.connected) {
+      h += '<p class="msg">Fills in your morning HRV, resting HR, Body Battery and sleep score from Garmin. Training Readiness stays a box you fill in, because Garmin doesn’t share it.</p>' +
+        '<div class="grow"><label><small>Your Garmin Personal API key</small><input type="password" id="garkey" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the key here"></label>' +
+        '<label><small>Key expires on (shown on Garmin’s key page)</small><input type="date" id="garexp"></label></div>' +
+        '<div class="gb">' + (st && st.connected ? '<button type="button" data-gk="cancel">Cancel</button>' : '') + '<button type="button" class="go" data-gk="save">Connect Garmin</button></div>';
+    } else {
+      const left = daysLeft(st.key_expires), bad = st.last_err === 'bad_key' || (left != null && left < 0);
+      h += '<div class="gst"><i class="' + (bad ? 'bad' : '') + '"></i><span>' + (bad ? 'Key not working' : 'Connected') + '</span></div>' +
+        '<p class="gsub">' + (st.last_ok ? 'Last synced ' + esc(fmtWhen(st.last_ok)) : 'Not synced yet') +
+        (st.key_expires ? ' · key ' + (left != null && left < 0 ? 'expired ' : 'expires ') + esc(fmtDay(st.key_expires)) + (left != null && left >= 0 && left <= 21 ? ' (' + left + ' days)' : '') : '') + '</p>' +
+        (st.last_err ? '<p class="msg">' + esc(errText(st.last_err)) + '</p>' : '') +
+        '<div class="gb"><button type="button" class="go" data-gk="sync">Sync now</button><button type="button" data-gk="replace">Replace key</button><button type="button" data-gk="off">Disconnect</button></div>';
+    }
+    c.innerHTML = h;
+    const b = k => c.querySelector('[data-gk="' + k + '"]');
+    if (b('save')) b('save').onclick = async () => {
+      const inp = document.getElementById('garkey'), key = (inp.value || '').trim(), exp = document.getElementById('garexp').value || null;
+      if (!key) { inp.focus(); return }
+      const go = b('save'); go.disabled = true; go.textContent = 'Checking with Garmin…';
+      try { const r = await window.sbFn('garmin', { action: 'setkey', key, expires: exp, date: isoD(today) }); inp.value = '';
+        tell(r.tokenOk ? 'Garmin connected' : 'Key saved. Garmin didn’t answer yet; it will retry'); filledFor = ''; lastFill = 0; await card(); fill(r.values, true) }
+      catch (e) { go.disabled = false; go.textContent = 'Connect Garmin'; tell(e && e.code === 'bad_key' ? 'Garmin didn’t accept that key. Copy it again and paste it' : 'Couldn’t reach the server. Try again') } };
+    if (b('cancel')) b('cancel').onclick = () => card();
+    if (b('replace')) b('replace').onclick = () => card('form');
+    if (b('sync')) b('sync').onclick = async () => { const s = b('sync'); s.disabled = true; s.textContent = 'Syncing…'; lastFill = 0; filledFor = ''; await fill(null, true); card() };
+    if (b('off')) b('off').onclick = async () => { const o = b('off');
+      if (o.dataset.sure !== '1') { o.dataset.sure = '1'; o.textContent = 'Tap again to disconnect'; setTimeout(() => { if (o.isConnected) { o.dataset.sure = ''; o.textContent = 'Disconnect' } }, 4000); return }
+      o.disabled = true; try { await window.sbFn('garmin', { action: 'disconnect' }); tell('Garmin disconnected') } catch (e) { tell('Couldn’t disconnect. Try again') } card() };
+  }
+
+  /* copy Garmin's numbers into today's empty boxes */
+  async function fill(values, force) {
+    if (filling) return; const d = isoD(today);
+    try { if (typeof view !== 'undefined' && view !== 'today' && !force) return; if (isoD(sel) !== d) return } catch (e) { return }
+    if (!force && filledFor === d && Date.now() - lastFill < 20 * 60e3) return;
+    if (!st) await loadStatus(); if (!st || !st.connected) return;
+    filling = true;
+    try {
+      let v = values;
+      if (!v) { const r = await window.sbFn('garmin', { action: 'today', date: d, cached: false }); v = r && r.values }
+      lastFill = Date.now(); filledFor = d;
+      if (!v || isoD(sel) !== d) return;
+      const got = [];
+      KEYS.forEach(([k]) => { if (typeof ready[k] !== 'number' && typeof v[k] === 'number') { ready[k] = v[k]; got.push(k) } });
+      { const G = (typeof garDay !== 'undefined' && garDay) || {}, ys = (G[dayIso(today, -1)] || {}).stressAvg;   // stress comes from Garmin too
+        if (!ready.stress && typeof ys === 'number') { ready.stress = stressChip(ys); got.push('stress') } }
+      if (!got.length) { if (force) tell(KEYS.every(([k]) => typeof ready[k] === 'number') ? 'Your Garmin numbers are already in' : 'Nothing new from Garmin yet. Open Garmin Connect so your watch syncs'); return }
+      ready.auto = Array.from(new Set([...(ready.auto || []), ...got]));
+      got.forEach(k => { const el = document.getElementById('g-' + k); if (el && document.activeElement !== el) el.value = ready[k] });
+      try { gHints(); showVerdict() } catch (e) {}
+      readyBusy = true; await saveReady(d);
+      tell('From Garmin: ' + got.map(k => k === 'stress' ? 'stress' : KEYS.find(x => x[0] === k)[1]).join(', '));
+    } catch (e) { if (force) tell('Garmin didn’t answer. Try again in a minute') }
+    finally { filling = false }
+  }
+
+  /* steps and calories: one line on Today, a 4-week card on Progress → Training */
+  const fmtN = n => Math.round(n).toLocaleString('en-GB');
+  const dayIso = (d, off) => { const x = new Date(d); x.setDate(x.getDate() + off); return isoD(x) };
+  /* "Your body today": the morning glance, top of Today (19 Nov, his ask: find the numbers fast, few words).
+     Four tiles, each a number and one status word against his own normal; steps underneath; details on tap. */
+  const bcss = `#gbody{padding:14px 14px 8px;background:var(--kcard,var(--card));border:0;border-radius:20px;box-shadow:var(--ksh,none)}#gbody .bh{display:flex;justify-content:space-between;align-items:baseline;margin:0 2px 10px}
+#gbody .bh b{font-size:15px;font-weight:700}#gbody .bh small{color:var(--muted);font-size:12px}
+#gbody .bt{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+#gbody .t{background:var(--soft);border:0;border-radius:14px;padding:9px 4px 8px;text-align:center;color:var(--fg);font:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:84px;justify-content:center}
+#gbody .t span{font-size:11.5px;color:var(--muted);letter-spacing:.02em}
+#gbody .t b{font-size:25px;line-height:1.05;font-weight:700;font-variant-numeric:tabular-nums}
+#gbody .t b small{font-size:12px;font-weight:600;color:var(--muted);margin-left:1px}
+#gbody .t em{font-style:normal;font-size:12px;font-weight:600;display:flex;align-items:center;gap:4px;white-space:nowrap}
+#gbody .t em:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+#gbody .t em.ok{color:var(--gold)}#gbody .t em.ok:before{background:var(--gold)}
+#gbody .t em.mid{color:var(--warn)}#gbody .t em.mid:before{background:var(--warn)}
+#gbody .t em.lo{color:var(--miss)}#gbody .t em.lo:before{background:var(--miss)}
+#gbody .t em.na{color:var(--muted)}
+#gbody .bs{display:flex;align-items:center;gap:10px;margin:10px 2px 0;font-size:14px}
+#gbody .bs .bar{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}#gbody .bs .bar i{display:block;height:100%;background:var(--done);border-radius:3px}
+#gbody .bs b{font-variant-numeric:tabular-nums}#gbody .bs small{color:var(--muted);font-size:12.5px;white-space:nowrap}
+#gbody .more{display:block;width:100%;background:none;border:0;color:var(--muted);font:600 13px var(--body,inherit);min-height:36px;margin-top:4px}
+#gbody .dt{border-top:1px solid var(--line);margin-top:6px;padding-top:10px;display:flex;flex-direction:column;gap:12px;font-size:14px}
+#gbody .dt h3{font:700 14px var(--body,inherit);text-transform:none;letter-spacing:0;margin:0 0 6px}#gbody .dt h3 small{text-transform:none;font-weight:500;color:var(--muted);font-size:13px;margin-left:6px}#gbody .dt p{margin:7px 0 0;color:var(--muted);font-size:13px}#gbody .dt p b{color:var(--fg)}
+#gbody .stg{display:flex;height:12px;border-radius:6px;overflow:hidden;gap:2px}#gbody .stg i{display:block}
+#gbody .lg{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:7px;font-size:13px;color:var(--muted)}#gbody .lg b{color:var(--fg);font-variant-numeric:tabular-nums}
+#gbody .lg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+#gbody .kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}#gbody .kv div{display:flex;flex-direction:column}
+#gbody.slim{padding:0}#gbody .sl{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;width:100%;background:none;border:0;color:var(--fg);font:500 14px var(--body,inherit);padding:13px 16px;text-align:left;min-height:48px}
+#gbody .sl span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}#gbody .sl span:before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted)}
+#gbody .sl span.ok:before{background:var(--gold)}#gbody .sl span.mid:before{background:var(--warn)}#gbody .sl span.lo:before{background:var(--miss)}#gbody .sl small{color:var(--muted);font-size:13px;margin-left:auto}
+body.glinked #gnudge,body.glinked #snapwrap,body.glinked .uxrow[data-uxg],body.glinked #readyToggle,body.glinked #gfixb{display:none!important}
+body.glinked #ready .q{display:none}
+body.glinked #ready.gempty{display:none}
+#ready .gfixb{display:none;background:none;border:0;color:var(--muted);font:600 13px var(--body,inherit);min-height:40px;padding:0;align-self:flex-start;text-decoration:underline;text-underline-offset:3px}
+body.glinked #ready:not(.collapsed) .gfixb{display:block}
+#gbody .kv b{font-size:17px;font-variant-numeric:tabular-nums}#gbody .kv span{font-size:12px;color:var(--muted)}`;
+  { const e = document.createElement('style'); e.textContent = bcss; document.head.appendChild(e) }
+  const STG = [['deepMin', 'Deep', '#3b5bdb'], ['remMin', 'REM', '#9b6bdf'], ['lightMin', 'Light', '#74a9f2'], ['awakeMin', 'Awake', '#f0a35e']];
+  const hm = m => Math.floor(m / 60) + 'h ' + String(Math.round(m % 60)).padStart(2, '0') + 'm';
+  let bodyOpen = false, slimOpen = false;
+  /* when Garmin is linked the check-in stops asking for numbers the card already shows */
+  function linkedUI(on) {
+    document.body.classList.toggle('glinked', on);
+    const r = document.getElementById('ready'); if (!r) return;
+    const mark = id => { const x = document.getElementById(id); const q = x && x.closest('.q'); if (q) q.classList.add('gq') };
+    mark('g-tr'); mark('gmore');
+    if (!document.getElementById('gfixb')) { const b = document.createElement('button'); b.type = 'button'; b.id = 'gfixb'; b.className = 'gfixb'; b.textContent = 'Fix a Garmin number';
+      const dr = document.getElementById('q-drinks'), q = dr && dr.closest('.q'); if (q) q.after(b);
+      b.onclick = () => { r.classList.toggle('gfix'); b.textContent = r.classList.contains('gfix') ? 'Hide the numbers' : 'Fix a Garmin number' } }
+    /* with the number boxes gone the card can end up with nothing showing (feeling answered, no call to make): then hide it */
+    r.classList.remove('gempty');                                // measure with the card showing, then hide it again if empty (no flicker: same frame)
+    if (on && !r.hidden) { const kids = [...r.children].filter(c => c.offsetParent !== null && c.offsetHeight > 0); if (!kids.length) r.classList.add('gempty') }
+    const tg = document.getElementById('readyToggle');
+    if (tg && on) { const op = typeof readyOpen !== 'undefined' && readyOpen; const want = op ? 'Less' : 'Legs and drinks'; if (tg.textContent !== want) tg.textContent = want; tg.hidden = false }
+  }
+  function tiles(v, G) {
+    const d = isoD(today), out = [];
+    { const sc = v.sleepScore, hrs = v.sleepHrs;
+      const [w, c] = typeof sc !== 'number' ? ['–', 'na'] : sc >= 80 ? ['Good', 'ok'] : sc >= 60 ? ['Fair', 'mid'] : ['Poor', 'lo'];
+      out.push(['Sleep', typeof hrs === 'number' ? hrs + '<small>h</small>' : typeof sc === 'number' ? sc : '–', typeof sc === 'number' ? w + ' · ' + sc : w, c]) }
+    { const x = v.hrv; let w = '–', c = 'na';
+      if (typeof x === 'number') { let h = null; try { h = hrvState(d, x) } catch (e) {}
+        const gs = String(v.hrvStatus || '');
+        if (h && h.mode === 'trend') { [w, c] = h.low ? ['Low', 'lo'] : x > h.hi * 1.15 ? ['High', 'mid'] : ['Normal', 'ok'] }
+        else if (gs) { [w, c] = gs === 'balanced' ? ['Normal', 'ok'] : gs === 'unbalanced' ? ['Off', 'mid'] : /low|poor/.test(gs) ? ['Low', 'lo'] : [gs[0].toUpperCase() + gs.slice(1), 'na'] }
+        else if (h && h.mode === 'early') { [w, c] = h.low ? ['Low', 'lo'] : ['Normal', 'ok'] }
+        else { w = 'Learning' } }
+      out.push(['HRV', typeof x === 'number' ? x + '<small>ms</small>' : '–', w, c]) }
+    { const x = v.restingHR; let w = '–', c = 'na';
+      if (typeof x === 'number') { let h = null; try { h = rhrState(d, x) } catch (e) {}
+        if (h && typeof h.up === 'number') { [w, c] = h.up >= 8 ? ['High', 'lo'] : h.up >= 5 ? ['Up', 'mid'] : ['Normal', 'ok'] } else w = 'Learning' }
+      out.push(['Rest HR', typeof x === 'number' ? x : '–', w, c]) }
+    { const x = v.bodyBattery; const [w, c] = typeof x !== 'number' ? ['–', 'na'] : x >= 60 ? ['Good', 'ok'] : x >= 30 ? ['Fair', 'mid'] : ['Low', 'lo'];
+      out.push(['Battery', typeof x === 'number' ? x : '–', w, c]) }
+    return out;
+  }
+  function dayLine() {
+    const host = document.getElementById('view-today'), strip = document.getElementById('strip'); if (!host || !strip) return;
+    { const old = document.getElementById('garday'); if (old) old.remove() }
+    let el = document.getElementById('gbody');
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, td = isoD(today), t = G[td] || {}, y = G[dayIso(today, -1)] || {};
+    const connected = st ? !!st.connected : Object.keys(G).some(k => /^\d{4}/.test(k));
+    if (!connected) linkedUI(false);
+    if (!connected || isoD(sel) !== td || (typeof mode !== 'undefined' && (mode === 'live' || mode === 'feedback'))) { if (el) el.remove(); return }
+    const R = (typeof ready !== 'undefined' && ready) || {}, v = { ...t };
+    KEYS.forEach(([k]) => { if (typeof R[k] === 'number') v[k] = R[k] });               // what he typed wins
+    linkedUI(true);
+    if (!el) { el = document.createElement('section'); el.className = 'card'; el.id = 'gbody'; el.setAttribute('aria-label', 'Your body today'); strip.parentNode.insertBefore(el, strip.nextSibling) }
+    const lg = (typeof logs !== 'undefined' && logs && logs[td]) || {}, trained = /^(done|partial|skipped|recovery)$/.test(lg.status || '');
+    if (trained && !slimOpen) {                                    // after today's session: one line, tap for the full card
+      const T = tiles(v, G), stp = typeof t.steps === 'number' ? '<span class="na">' + fmtN(t.steps) + ' steps</span>' : '';
+      const sh = ['Sleep', 'HRV', 'RHR', 'Battery'].map((n, i) => String(T[i][1]) === '–' ? '' : '<span class="' + T[i][3] + '">' + n + ' ' + String(T[i][1]).replace(/<[^>]+>/g, '') + '</span>').join('') + stp;
+      const h1 = '<button type="button" class="sl" data-gs="1" aria-label="Your body today, show more">' + sh + '<small>›</small></button>';
+      el.classList.add('slim'); if (el.innerHTML !== h1) el.innerHTML = h1; return }
+    el.classList.remove('slim');
+    const at = t.at ? new Date(t.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase() : '';
+    let h = '<div class="bh"><b>Your body today</b><small>' + (at ? 'Updated ' + at : 'Waiting for your watch') + '</small></div><div class="bt">' +
+      tiles(v, G).map(([l, n, w, c]) => '<button type="button" class="t" data-gb="1"><span>' + l + '</span><b>' + n + '</b><em class="' + c + '">' + esc(w) + '</em></button>').join('') + '</div>';
+    { const days = []; for (let i = 1; i <= 7; i++) { const s = (G[dayIso(today, -i)] || {}).steps; if (typeof s === 'number' && s > 500) days.push(s) }
+      const avg = days.length >= 2 ? days.reduce((a, b) => a + b, 0) / days.length : null, st0 = t.steps;
+      if (typeof st0 === 'number' || avg) h += '<div class="bs"><small>Steps</small><b>' + (typeof st0 === 'number' ? fmtN(st0) : '–') + '</b>' +
+        (avg ? '<span class="bar" aria-hidden="true"><i style="width:' + Math.min(100, Math.round((st0 || 0) / avg * 100)) + '%"></i></span><small>usual ' + fmtN(Math.round(avg / 100) * 100) + '</small>' : '<small>steps today</small>') + '</div>' }
+    const sd = t.sleepDetail || {}, hasStg = STG.some(([k]) => typeof sd[k] === 'number');
+    const kv = [];
+    if (typeof y.steps === 'number') kv.push([fmtN(y.steps), 'steps']);
+    if (typeof y.kcalTotal === 'number') kv.push([fmtN(y.kcalTotal), 'kcal']);
+    if (typeof y.intensityMin === 'number') kv.push([y.intensityMin, 'intensity min']);
+    if (typeof y.stressAvg === 'number') kv.push([y.stressAvg, 'stress']);
+    const night = [];
+    if (typeof sd.spo2 === 'number') night.push('Blood oxygen <b>' + sd.spo2 + '%</b>');
+    if (typeof sd.resp === 'number') night.push('breathing <b>' + Math.round(sd.resp) + '</b>/min');
+    if (hasStg || kv.length) {
+      h += '<button type="button" class="more" data-gb="1" aria-expanded="' + bodyOpen + '">' + (bodyOpen ? 'Less ▴' : 'Sleep and yesterday ▾') + '</button>';
+      if (bodyOpen) {
+        h += '<div class="dt">';
+        if (hasStg) { const asleep = (sd.deepMin || 0) + (sd.remMin || 0) + (sd.lightMin || 0), short = typeof sd.needMin === 'number' ? sd.needMin - asleep : null;
+          h += '<div><h3>Last night<small>' + hm(asleep) + ' asleep' + (short != null && short >= 15 ? ', ' + hm(short).replace(/^0h /, '') + ' short' : '') + '</small></h3><div class="stg">' +
+            STG.filter(([k]) => sd[k] > 0).map(([k, , c]) => '<i style="flex:' + sd[k] + ';background:' + c + '"></i>').join('') + '</div><div class="lg">' +
+            STG.filter(([k]) => typeof sd[k] === 'number').map(([k, n, c]) => '<span><i style="background:' + c + '"></i>' + n + ' <b>' + hm(sd[k]).replace(/^0h /, '') + '</b></span>').join('') + '</div>' +
+            (night.length ? '<p>' + night.join(' · ') + '</p>' : '') + '</div>' }
+        if (kv.length) h += '<div><h3>Yesterday</h3><div class="kv">' + kv.map(([n, l]) => '<div><b>' + esc(n) + '</b><span>' + esc(l) + '</span></div>').join('') + '</div></div>';
+        h += '</div>';
+      }
+    }
+    if (el.innerHTML !== h) el.innerHTML = h;
+  }
+  document.addEventListener('click', e => { if (!e.target.closest) return;
+    if (e.target.closest('#gbody [data-gs]')) { slimOpen = true; dayLine(); return }
+    const b = e.target.closest('#gbody [data-gb]'); if (!b) return; bodyOpen = !bodyOpen; dayLine() });
+  /* Garmin's all-day stress for yesterday, under the work-stress chips. A hint only: he taps the chip himself */
+  function band(v) { return v <= 25 ? 'resting' : v <= 50 ? 'low' : v <= 75 ? 'medium' : 'high' }
+  function stressHint() {
+    const row = document.getElementById('q-stress'); if (!row) return;
+    let el = document.getElementById('gstress');
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, y = G[dayIso(today, -1)] || {};
+    const show = typeof y.stressAvg === 'number' && isoD(sel) === isoD(today);
+    if (!show) { if (el) el.remove(); return }
+    if (!el) { el = document.createElement('small'); el.id = 'gstress'; el.style.cssText = 'display:block;margin-top:4px;color:var(--muted)'; row.parentNode.appendChild(el) }
+    const h = 'Garmin yesterday: ' + y.stressAvg + ' (' + band(y.stressAvg) + ')';
+    if (el.textContent !== h) el.textContent = h;
+  }
+  function weekCard() {
+    const host = document.getElementById('view-prog'); if (!host) return;
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, days = Object.keys(G).filter(k => typeof G[k].steps === 'number');
+    let c = document.getElementById('garact');
+    if (!days.length) { if (c) c.remove(); return }
+    if (!c) { c = document.createElement('section'); c.className = 'card'; c.id = 'garact'; c.dataset.pg = 'train'; c.setAttribute('aria-labelledby', 'garacth'); host.appendChild(c) }
+    const mon = d => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return isoD(x) };
+    const wk = {}; days.forEach(k => { const m = mon(k); (wk[m] = wk[m] || []).push(G[k]) });
+    const ws = Object.keys(wk).sort().slice(-4), cur = mon(isoD(today));
+    const avg = (a, f) => { const v = a.map(x => x[f]).filter(x => typeof x === 'number'); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null };
+    const rows = ws.map(m => { const a = wk[m], st = avg(a, 'steps'), ka = avg(a, 'kcalActive'), im = a.reduce((p, x) => p + (typeof x.intensityMin === 'number' ? x.intensityMin : 0), 0);
+      const lbl = m === cur ? 'This wk' : new Date(m + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      return '<tr><td>' + lbl + '</td><td class="num">' + (st != null ? fmtN(st) : '–') + '</td><td class="num">' + (ka != null ? fmtN(ka) : '–') + '</td><td class="num">' + im + '</td></tr>' }).join('');
+    const h = '<h2 id="garacth">Steps and activity</h2><p class="msg" style="margin:0 0 8px">Daily averages from your Garmin. Intensity minutes count vigorous minutes twice, like Garmin does; the usual target is 150 a week.</p>' +
+      '<table style="width:100%;font-size:14px;border-collapse:collapse"><thead><tr style="color:var(--muted);text-align:left"><th style="font-weight:500">Week of</th><th style="font-weight:500">Steps/day</th><th style="font-weight:500">Active kcal/day</th><th style="font-weight:500">Intensity min</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    if (c.innerHTML !== h) c.innerHTML = h;
+  }
+  window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} };
+
+  /* keep the check-in's labels right every time the page redraws it (after the page script has loaded) */
+  const wrapSV = () => { if (typeof window.showVerdict === 'function') { const sv = window.showVerdict; window.showVerdict = function () { const r = sv.apply(this, arguments); try { if (document.body.classList.contains('glinked')) linkedUI(true) } catch (e) {} return r } } };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wrapSV); else wrapSV();
+  db().then(d => { if (!d) return;
+    card();
+    setInterval(window.garDayChanged, 4000);
+    setTimeout(fill, 2500);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(fill, 1200) });
+    document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#nav')) setTimeout(fill, 800) }, true);
+  }).catch(() => {});
 })();
 
 </script></head><body><title>Eleanor's Hyrox Log</title>
@@ -2157,7 +2437,7 @@ function gFlags(r,day){const f=[],d=day||iso(sel);if(!r)return f;
   if(r.quick==='tired'&&!objFine(r,d))f.push(['trim','you said tired']);
   if(r.drinks==='5+')f.push(['trim','5+ drinks last night']);
   if(r.legs==='very'){let k0='';try{k0=effPlan(parse(d)).key}catch(_){}if(k0!=='U')f.push(['trim','legs very sore'])} /* sore legs don't trim an upper day */
-  if(r.stress==='high')f.push(['trim','high work stress']);
+  if(r.stress==='high')f.push(['trim',(r.auto||[]).includes('stress')?'Garmin stress high yesterday':'high work stress']);
   if(r.sleep==='<6')f.push(['trim','under 6 h sleep']);
   if(r.tr!=null&&r.tr<50)f.push(['trim','Training Readiness '+(r.trl||trBand(r.tr)).toLowerCase()]);
   if(typeof r.bodyBattery==='number'&&r.bodyBattery<30)f.push(['trim','Body Battery '+r.bodyBattery]);
@@ -2165,7 +2445,8 @@ function gFlags(r,day){const f=[],d=day||iso(sel);if(!r)return f;
   if(typeof r.hrv==='number'){const h=hrvState(d,r.hrv);if(h.low)f.push(['trim',h.mode==='trend'?'HRV 7-day average below your normal range':'HRV '+Math.round((1-r.hrv/h.med)*100)+'% under your usual'])}
   if(typeof r.restingHR==='number'){const h=rhrState(d,r.restingHR);if(h.acute)f.push(['recover','resting HR '+Math.round(h.up)+' bpm above your baseline']);else if(h.sustained)f.push(['trim','resting HR up '+Math.round(h.up)+' bpm and trending up'])}
   return f}
-function verdictOf(r){if(!r||(!r.quick&&r.sleep==null&&r.tr==null&&!r.legs&&!r.stress&&!GK.some(k=>typeof r[k]==='number')))return null;
+function verdictOf(r){if(r&&['go','trim','recover'].includes(r.override))return r.override; /* his own call (Kishen's app, 19 Nov) beats the numbers */
+  if(!r||(!r.quick&&r.sleep==null&&r.tr==null&&!r.legs&&!r.stress&&!GK.some(k=>typeof r[k]==='number')))return null;
   const g=gFlags(r);
   if(r.quick==='wrecked'||g.some(x=>x[0]==='recover')||g.length>=3)return'recover';
   return g.length?'trim':'go'}
@@ -2209,7 +2490,7 @@ function gHints(){const d=iso(sel);
     em.textContent=t;em.className=c})}
 function queueReady(){readyBusy=true;clearTimeout(window._rt);const k0=iso(sel);window._rt=setTimeout(()=>saveReady(k0),700)}
 async function saveReady(k0){
-  const r={...ready};r.verdict=verdictOf(r);r.at=new Date().toISOString();const k=k0||iso(sel);
+  const r={...ready};r.verdict=verdictOf(r);if(r.override)r.autoVerdict=verdictOf({...r,override:undefined});else delete r.autoVerdict;r.at=new Date().toISOString();const k=k0||iso(sel);
   if(db){try{await db.doc('log/'+k).update({readiness:r})}catch(e){try{await db.doc('log/'+k).set({...(logs[k]||{}),date:k,week:weekOf(sel),status:(logs[k]&&logs[k].status)||'open',readiness:r})}catch(e2){}}}
   readyBusy=false;
   if(mode==='preview'&&k===iso(sel)){logs[k]={...(logs[k]||{date:k}),readiness:r};loadSession();renderSession()}
@@ -2846,7 +3127,7 @@ function weekCounts(any){const sun=wkStart(any);let done=0,key=0;
   for(let i=0;i<7;i++){const d=addDays(sun,i),p=effPlan(d),st=stateOf(d);
     if(p.type!=='rest'&&!p.optional&&(st==='done'||st==='partial')){done++;if(['A','B',TXT.weekCounts].includes(p.key))key++}}
   return{done,key}}
-function habitsHtml(rows,limit){if(!rows.length)returnTXT.habitsHtml;
+function habitsHtml(rows,limit){if(!rows.length)return TXT.habitsHtml;
   return rows.slice(0,limit||8).map(r=>{const c=r.pct>=90?'var(--done)':r.pct>=60?'var(--warn)':'var(--miss)';
     return'<div class="lrow"><div class="ln"><b>'+esc(r.n)+'</b><small class="num">'+r.done+' of '+r.plan+' sets'+(r.skip?' · skipped '+r.skip+' of '+r.sess+(r.skip>=2&&r.tail===r.skip?', always at the end':''):'')+(r.cut?' · cut short '+r.cut+'×':'')+'</small></div><div class="lb"><i style="width:'+Math.max(3,r.pct)+'%;background:'+c+'"></i></div><span class="num lp" style="color:'+c+'">'+r.pct+'%</span></div>'}).join('')}
 function mobHtml(){const L=mobList(cur.key),c=cur.mobility||{},n=L.filter((_,i)=>c[i]).length;
@@ -3444,13 +3725,21 @@ function renderSession0(){try{renderFun()}catch(e){}try{renderPatch()}catch(e){}
   if(iso(sel)===iso(today)&&mode!=='live'&&mode!=='feedback'&&!(cur.type==='cardio'&&cur.status==='in_progress'))el.insertAdjacentHTML('beforeend',nightBtnHtml());
   if(iso(sel)===iso(today)&&mode!=='live'&&mode!=='feedback'){const ph=parkedHtml();if(ph)el.insertAdjacentHTML('afterbegin',ph)}
 }
+/* the 6:28am note is about the session the coach planned: hide it once today became something else (a Wrecked check-in,
+   a rest day from the chat, or a session she moved after the coach ran), so the card never describes a workout she isn't doing */
+function coachNoteFits(){if(!(coach&&cur&&coach.date===iso(sel)&&coach.note))return false;const k=iso(sel),lg=logs[k]||{};
+  if(cur.recoverOf)return false;
+  if(coach.rest)return cur.type==='rest'&&!(Array.isArray(coach.chat)&&coach.chat.some(x=>/Today is a rest day/.test(String(x))));
+  if(lg.movedAt&&Date.parse(lg.movedAt)>Date.parse(k+'T06:40:00+08:00')&&(lg.status==='moved'||lg.hostKey))return false;
+  return true}
 function noteHtml(){
   const n=[],lg=cur&&cur.practice?{}:(logs[iso(sel)]||{}),v=lg.readiness&&lg.readiness.verdict;let cls='';
   if(cur&&cur.practice)n.push('Practice: '+esc(cur.title)+' as it will look on '+DN[parse(cur.date).getDay()]+' '+short(parse(cur.date))+'. Nothing is saved.');
-  if(coach&&coach.date===iso(sel)&&coach.note)n.push(esc(coach.note)+(Array.isArray(coach.evidence)?' '+coach.evidence.filter(x=>typeof x==='string'&&evFind(x)).slice(0,3).map(x=>evb(x,evFind(x).title)).join(' '):''));
+  if(coachNoteFits())n.push(esc(coach.note)+(Array.isArray(coach.evidence)?' '+coach.evidence.filter(x=>typeof x==='string'&&evFind(x)).slice(0,3).map(x=>evb(x,evFind(x).title)).join(' '):''));
   if(v==='trim'&&cur.type==='lift'){n.push('Trimmed from your check-in: one less set, no weight increases.');cls='trim'}
-  if(cur.recoverOf){n.push('Recovery day from your check-in. '+esc(cur.recoverOf)+' moves to another day.');cls='recover'}
-  {const pf=planFor(sel);if(pf&&pf.info&&!cur.practice)n.push(esc(pf.info));const cy=cycTrain(sel);if(cy&&!/eriod/.test(pf.info||''))n.push(esc(cy.t));
+  if(cur.recoverOf){n.push('Recovery day from your check-in. If you want '+esc(cur.recoverOf.replace(/ · Express$/,''))+' later this week, move it in the calendar.');cls='recover'}
+  {const pf=planFor(sel);if(pf&&pf.info&&!cur.practice&&!(cur.type==='rest'&&pf.type!=='rest'))n.push(esc(pf.info));   /* the planned session's how-to, not on a day that became rest */
+  const cy=cycTrain(sel);if(cy&&!/eriod/.test(pf.info||''))n.push(esc(cy.t));
     const ft=iso(sel)===iso(today)?feelToday():[];if(ft.includes('cramps')||ft.includes('low'))n.push('You logged '+(ft.includes('cramps')?'cramps':'low energy')+' today. Express or an easy session is a smart call.')}
   if(cur.type==='lift'&&cur.week>=1&&['A','B'].includes(cur.key))n.push('Effort: stop about '+rirT(cur.week)+' rep'+(rirT(cur.week)>1?'s':'')+' short of failure.'+(light(cur.week)?' Lighter week.':'')+' '+evb('rir')+(light(cur.week)?' '+evb('deload','Lighter week'):''));
   {const rn=recoveryNote();if(rn){n.push(esc(rn));if(!cls)cls='trim'}}
@@ -4882,8 +5171,8 @@ function akStarted(k){const st=(logs[k]||{}).status;return['in_progress','done',
 const akLiveOn=()=>!!(cur&&mode==='live'&&cur.status==='in_progress'&&cur.type==='lift'&&!cur.practice);
 function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).concat(lines.map(([tag,text])=>({tag,text})));if(undo)(msg.undos=msg.undos||[]).push(undo);odyRender(true)};
   return[
-  {name:'change_today',description:'Change TODAY\'s session, before she starts it. Ops: weight (new target kg for one lift, at most 20% from today\'s target), backup (a free alternative for a lift whose machine is taken; it shows as "Coach\'s pick" when she taps ⇄ Taken?), express (shorter version of today), full (back to the full session after Express), rest (make today a rest day; give a reason). Use exercise names exactly as in her list.',
-   inputSchema:{type:'object',properties:{changes:{type:'array',items:{type:'object',properties:{op:{type:'string',enum:['weight','backup','express','full','rest']},exercise:{type:'string'},kg:{type:'number'},to:{type:'string'},reason:{type:'string'}},required:['op']}}},required:['changes']},
+  {name:'change_today',description:'Change TODAY\'s session, before she starts it. Ops: weight (new target kg for one lift, at most 20% from today\'s target), backup (a free alternative for a lift whose machine is taken; it shows as "Coach\'s pick" when she taps ⇄ Taken?), express (shorter version of today), full (back to the full session after Express), rest (make today a rest day; give a reason), back (she changed her mind after a rest day made in this chat, even in a later conversation: today goes back to her planned session). Use exercise names exactly as in her list.',
+   inputSchema:{type:'object',properties:{changes:{type:'array',items:{type:'object',properties:{op:{type:'string',enum:['weight','backup','express','full','rest','back']},exercise:{type:'string'},kg:{type:'number'},to:{type:'string'},reason:{type:'string'}},required:['op']}}},required:['changes']},
    async execute(a){if(!db)throw new Error('The app is offline.');akOpen();
      const chg=(Array.isArray(a.changes)?a.changes:[]).slice(0,6);if(!chg.length)throw new Error('Nothing to change.');
      const k=odyK(),prev=coach&&coach.date===k?JSON.parse(JSON.stringify(coach)):null,raw=coach?JSON.parse(JSON.stringify(coach)):null;
@@ -4899,7 +5188,17 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
          const i=item(n);i.backup=t;i.backupWhy=String(c.reason||'Picked in the chat').slice(0,80);lines.push(['SWAP','If '+n+' is taken: '+t+' (tap ⇄ Taken?)'])}
        else if(op==='express'){if(s.express)throw new Error('Today is already Express.');if(plan.type==='rest')throw new Error('Today is a rest day.');d.title=String(plan.title||s.title).replace(/ · Express$/,'')+' · Express';delete d.rest;lines.push(['EDIT','Today is Express'])}
        else if(op==='full'){if(!/Express\s*$/.test(d.title||''))throw new Error(s.express?'She chose Express herself in the app: the full session is one tap away there.':'Today is already the full session.');delete d.title;lines.push(['EDIT','Back to the full session'])}
-       else if(op==='rest'){if(plan.type==='rest'&&!d.title)throw new Error('Today is already a rest day.');d.rest=true;d.title='Rest day';lines.push(['CANCEL','Today is a rest day'+(c.reason?' ('+String(c.reason).slice(0,60)+')':'')])}
+       else if(op==='rest'){if(plan.type==='rest'&&!d.title)throw new Error('Today is already a rest day.');d.rest=true;d.restBy='chat';d.title='Rest day';
+         if(d.note){d.noteBefore=d.note;d.note=''}   /* the coach's note was about the session she's no longer doing */
+         lines.push(['CANCEL','Today is a rest day'+(c.reason?' ('+String(c.reason).slice(0,60)+')':'')])}
+       else if(op==='back'){const lg=logs[k]||{};
+         if(cur&&cur.recoverOf&&!d.rest)throw new Error('Today is a recovery day because she tapped Wrecked in her check-in. If she feels better she can tap Change there and pick how she feels now.');
+         if(!d.rest)throw new Error('Today is already her planned session ('+String(plan.title||s.title).replace(/ · Express$/,'')+').');
+         const byChat=d.restBy==='chat'||(Array.isArray(d.chat)&&d.chat.some(x=>/Today is a rest day/.test(String(x))));
+         if(!byChat)throw new Error('Her coach made today a rest day this morning'+(d.noteBefore||d.note?' ("'+String(d.noteBefore||d.note).slice(0,120)+'")':'')+', so I won\'t undo it from here. If she feels fine, pass it to her coach with tell_coach.');
+         if(lg.status==='moved')throw new Error('She moved today\'s session to another day in the calendar; it can be put back there.');
+         delete d.rest;delete d.restBy;if(d.title==='Rest day')delete d.title;if(d.noteBefore!==undefined){d.note=d.noteBefore;delete d.noteBefore}
+         const back=String((effPlan(today)||{}).title||'her session').replace(/ · Express$/,'');lines.push(['EDIT','Back to '+back+' today'])}
        else throw new Error('"'+op+'" is not a change I can make.')}
      const sum=lines.map(l=>l[1]).join('; ');d.chat=(Array.isArray(d.chat)?d.chat:[]).concat([sum]).slice(-8);d.chatAt=new Date().toISOString();
      try{await akWrite(d)}catch(e){throw new Error('Couldn\'t save that just now, nothing was changed.')}
@@ -5484,6 +5783,36 @@ background:radial-gradient(120% 90% at 100% 0%,rgba(255,170,210,.45),transparent
   a.innerHTML='<small>eleanor_log · update 2.4.0 · git checkout new_app</small><b>Your app has moved 💕</b><span>Your new home has its own icon, works offline, and Ask Kishen lives there now. All your training is already inside.</span><div class="row"><span class="go">Open my new app</span><button type="button" class="lt">Later</button></div>';
   a.querySelector('.lt').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();try{localStorage.setItem(k,t)}catch(_){}a.remove()});
   const w=document.querySelector('.wrap[role="main"]'),x=document.getElementById('xpc');if(w&&x)w.insertBefore(a,x);else if(w)w.prepend(a)})();
+}catch(e){console.error(e)}
+;
+try{
+/* Badges with a bit of life (19 Nov 2026, Kishen's ask: hers looked bland next to his). Same idea as his app:
+   badges she's working on show a progress ring with "3/10" inside and "7 to go"; earned ones get their own emoji
+   on a glowing pink medal; the grid splits into "Earned" and "In progress". Pink, not his volt. */
+(function(){
+  const css=`.bd.bd .medal{width:52px;height:52px;font-size:25px;line-height:1}
+.bd.bd.on .medal{background:radial-gradient(circle at 35% 30%,#ffd1e8 0,var(--accent) 70%);color:#fff;box-shadow:0 0 18px -4px var(--accent)}
+.bd.bd:not(.on) .medal{background:conic-gradient(var(--accent) var(--p,0%),color-mix(in srgb,var(--accent) 16%,transparent) 0);position:relative;color:var(--fg)}
+.bd.bd:not(.on) .medal::before{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--card)}
+.bd.bd:not(.on) .medal span,.bd.bd:not(.on) .medal svg{position:relative}
+.bd.bd:not(.on) .medal span{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+.bgrid .ebh{grid-column:1/-1;font-family:var(--body);font-size:16px;font-weight:700;margin:6px 0 0;text-transform:none;letter-spacing:0;line-height:1.2}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const EMO={'First rep':'🏋️‍♀️','Race ready':'🏁','Full house':'🏠','Perfect week':'⭐','Ten straight':'🔟','Unbreakable':'🛡️','PR hunter':'🏆','Leg day loyal':'🍑',
+    'Plank 45':'⏱️','Sub-6 kilometre':'⚡','Check-in habit':'📝','Iron grip':'✊','Bendy':'🧘‍♀️','Ghostbuster':'👻'};
+  function eBadges(){try{const gr=$('bgrid');if(!gr)return;const B=[...gr.querySelectorAll('.bd')];if(!B.length)return;
+    B.forEach(b=>{const nm=(b.querySelector('b')||{}).textContent||'',m=b.querySelector('.medal'),bp=b.querySelector('.bp');if(!m)return;
+      if(b.classList.contains('on')){m.textContent=EMO[nm]||'🏅';return}
+      const t=bp?bp.textContent:'',x=/(\d+(?:\.\d+)?)\s*of\s*(\d+(?:\.\d+)?)\s*(.*)$/.exec(t);
+      if(x&&+x[2]>0){const v=+x[1],n=+x[2],u=x[3].trim();m.style.setProperty('--p',Math.max(0,Math.min(100,v/n*100))+'%');m.innerHTML='<span>'+v+'/'+n+'</span>';
+        const left=Math.round((n-v)*10)/10;if(bp&&left>0)bp.textContent=left+(u?' '+u:'')+' to go'}});
+    const on=B.filter(b=>b.classList.contains('on')),off=B.filter(b=>!b.classList.contains('on'));gr.textContent='';
+    const hd=t=>{const h=document.createElement('h3');h.className='ebh';h.textContent=t;return h};
+    if(on.length){gr.appendChild(hd('Earned · '+on.length));on.forEach(b=>gr.appendChild(b))}
+    if(off.length){gr.appendChild(hd(on.length?'In progress':'Your badges'));off.forEach(b=>gr.appendChild(b))}}catch(e){}}
+  const _rg=renderGame;renderGame=function(){const r=_rg.apply(this,arguments);eBadges();return r};
+  try{eBadges()}catch(e){}
+})();
 }catch(e){console.error(e)}
 ;
 const APP_NAME='eleanor',APP_VER='e39';
