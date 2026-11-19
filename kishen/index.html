@@ -824,7 +824,9 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     const R = (typeof ready !== 'undefined' && ready) || {}, v = { ...t };
     KEYS.forEach(([k]) => { if (typeof R[k] === 'number') v[k] = R[k] });               // what he typed wins
     linkedUI(true);
-    if (!el) { el = document.createElement('section'); el.className = 'card'; el.id = 'gbody'; el.setAttribute('aria-label', 'Your body today'); strip.parentNode.insertBefore(el, strip.nextSibling) }
+    if (!el) { el = document.createElement('section'); el.className = 'card'; el.id = 'gbody'; el.setAttribute('aria-label', 'Your body today') }
+    { const ses = document.getElementById('session'), at = ses && ses.parentNode === strip.parentNode ? ses : strip;     // under the session card (19 Nov: briefing, check-in, session, then the numbers)
+      if (at.nextSibling !== el) at.parentNode.insertBefore(el, at.nextSibling) }
     const lg = (typeof logs !== 'undefined' && logs && logs[td]) || {}, trained = /^(done|partial|skipped|recovery)$/.test(lg.status || '');
     if (trained && !slimOpen) {                                    // after today's session: one line, tap for the full card
       const T = tiles(v, G), stp = typeof t.steps === 'number' ? '<span class="na">' + fmtN(t.steps) + ' steps</span>' : '';
@@ -895,7 +897,25 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
       '<table style="width:100%;font-size:14px;border-collapse:collapse"><thead><tr style="color:var(--muted);text-align:left"><th style="font-weight:500">Week of</th><th style="font-weight:500">Steps/day</th><th style="font-weight:500">Active kcal/day</th><th style="font-weight:500">Intensity min</th></tr></thead><tbody>' + rows + '</tbody></table>';
     if (c.innerHTML !== h) c.innerHTML = h;
   }
-  window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} };
+  /* 19 Nov: VO2 max from Garmin goes in by itself when it changes (no Log button needed); a number he logs still counts */
+  let vo2Busy = false;
+  async function vo2Auto() {
+    if (vo2Busy || typeof vo2 === 'undefined') return;
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, td = isoD(today), ks = Object.keys(G).filter(k => /^\d{4}-/.test(k) && k <= td && typeof G[k].vo2 === 'number').sort();
+    if (!ks.length) return; const k = ks[ks.length - 1], v = G[k].vo2, last = vo2.length ? vo2[vo2.length - 1] : null;
+    if (last && (last.value === v || last.date >= k)) return;
+    vo2Busy = true;
+    try { const d = await db(); if (!d) return; const doc = { date: k, value: v, at: new Date().toISOString(), src: 'garmin' };
+      await d.doc('vo2/' + k).set(doc); vo2 = vo2.filter(x => x.date !== k).concat(doc).sort((a, b) => a.date < b.date ? -1 : 1);
+      try { renderVo2(); renderLongevity() } catch (e) {} } catch (e) {} finally { vo2Busy = false }
+  }
+  /* 19 Nov: a month of past HRV and resting HR from Garmin, a few days per app open, so the normal range works now */
+  async function backfill() {
+    try { if (Date.now() - (+localStorage.getItem('garBf') || 0) < 6 * 3600e3) return } catch (e) {}
+    try { const r = await window.sbFn('garmin', { action: 'backfill', days: 8 });
+      if (r && !r.error) { try { localStorage.setItem('garBf', r.left ? '0' : String(Date.now())) } catch (e) {} } } catch (e) {}
+  }
+  window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} try { vo2Auto() } catch (e) {} };
 
   /* keep the check-in's labels right every time the page redraws it (after the page script has loaded) */
   const wrapSV = () => { if (typeof window.showVerdict === 'function') { const sv = window.showVerdict; window.showVerdict = function () { const r = sv.apply(this, arguments); try { if (document.body.classList.contains('glinked')) linkedUI(true) } catch (e) {} return r } } };
@@ -905,6 +925,7 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     setInterval(window.garDayChanged, 4000);
     if (window.__introOn) { try { garPull() } catch (e) {} }
     setTimeout(fill, 2500);
+    setTimeout(backfill, 9000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(fill, 1200) });
     document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#nav')) setTimeout(fill, 800) }, true);
   }).catch(() => {});
@@ -941,6 +962,9 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
 #gbrief .ln{margin:0;font-size:15px;line-height:1.45;color:var(--muted)}#gbrief .ln b{color:var(--fg);font-weight:600}
 #gbrief.fresh .hi,#gbrief.fresh .ln{animation:gbin .6s cubic-bezier(.16,1,.3,1) both}#gbrief.fresh .ln:nth-of-type(2){animation-delay:.15s}#gbrief.fresh .ln:nth-of-type(3){animation-delay:.3s}#gbrief.fresh .ln:nth-of-type(4){animation-delay:.45s}
 @keyframes gbin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+body.hasbrief #verdict #vword,body.hasbrief #verdict #vtext,body.hasbrief #verdict .vpick small{display:none}
+body.hasbrief #verdict .vpick{grid-row:2;margin-top:0}body.hasbrief #verdict::before{content:"Your call";grid-column:1;grid-row:1;font-size:13px;font-weight:600}body.hasbrief #verdict.go::before{color:var(--ink)}
+body.hasbrief #ready:not(.answered) #verdict{display:none!important}
 @media (prefers-reduced-motion:reduce){#gbrief .wv i,#gbrief.fresh .hi,#gbrief.fresh .ln{animation:none!important}}`;
   const se = document.createElement('style'); se.textContent = css; (document.head || document.documentElement).appendChild(se);
 
@@ -985,8 +1009,10 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     if (typeof t.bodyBattery === 'number') { parts.push('battery is ' + (t.bodyBattery >= 60 ? 'good' : t.bodyBattery >= 30 ? 'fair' : 'low')); said.push('body battery is at ' + t.bodyBattery) }
     const numsL = parts.length ? [parts.join(parts.length > 2 ? ', ' : ' and ').replace(/^./, c => c.toUpperCase()) + '.', said.join(said.length > 2 ? ', ' : ' and ').replace(/^./, c => c.toUpperCase()) + '.'] : null;
     /* the plan and the call */
+    const felt0 = !!(R.quick || ['go', 'trim', 'recover'].includes(R.override));
     let callL;
-    if (rest) callL = ['Rest day today. An easy walk counts.', 'Rest day today. An easy walk counts.'];
+    if (!rest && !recOf && !felt0) callL = ['<b>' + esc(title) + '</b> today. Tell me how you feel and I’ll make the call.', sayT + ' today. Tell me how you feel and I will make the call.'];
+    else if (rest) callL = ['Rest day today. An easy walk counts.', 'Rest day today. An easy walk counts.'];
     else if (recOf) callL = ['Recovery day, as you asked: an easy walk and a stretch.', 'Recovery day, as you asked. An easy walk and a stretch.'];
     else if (v === 'go') callL = ['<b>' + esc(title) + '</b>, full session.', sayT + ' today, full session.'];
     else if (v === 'trim') callL = lift ? ['<b>' + esc(title) + '</b>, trimmed: one set fewer on each lift.', sayT + ' today, trimmed. One set fewer on each lift.'] : ['<b>' + esc(title) + '</b>, trimmed: keep it shorter and easier.', sayT + ' today, trimmed. Keep it shorter and easier.'];
@@ -996,9 +1022,9 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     if (trained || st === 'recovery' || st === 'skipped') {
       if (st === 'done') L.push(['<b>' + esc(title) + '</b> is done. Nice work.', sayT + ' is done. Nice work.']);
       else if (st === 'partial') L.push(['<b>' + esc(title) + '</b> logged, part done. It still counts.', sayT + ' logged, part done. It still counts.']);
-      else if (st === 'recovery') L.push(['Recovery day logged.', 'Recovery day logged.']);
+      else if (st === 'recovery') L.push(['Recovery day logged. Easy day, sir.', 'Recovery day logged. Easy day, sir.']);
       else L.push(['Today’s session was skipped. Tomorrow’s a fresh start.', 'Today’s session was skipped. Tomorrow is a fresh start.']);
-      if (s === 'evening' && sleepShortL) L.push(sleepShortL); else L.push(['Refuel and rest up.', 'Refuel and rest up.']);
+      if (s === 'evening' && sleepShortL) L.push(sleepShortL); else if (st === 'recovery' || st === 'skipped') L.push(['Back at it tomorrow.', 'Back at it tomorrow.']); else L.push(['Refuel and rest up.', 'Refuel and rest up.']);
     } else if (s === 'morning') {
       if (sleepL) L.push(sleepL); else L.push(['Your watch hasn’t sent last night’s sleep yet.', 'Your watch has not sent last night’s sleep yet.']);
       if (numsL) L.push(numsL);
@@ -1021,7 +1047,8 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     /* complete = the watch has sent this morning's numbers and today's call is made (or the session is logged):
        only then does the speaker show, so each morning makes one clip of the whole briefing, not a half one first */
     const hasG = ['hrv', 'bodyBattery', 'sleepHrs', 'sleepScore'].some(k => typeof t[k] === 'number');
-    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && !!(rest || recOf || v));
+    const felt = !!(R.quick || ['go', 'trim', 'recover'].includes(R.override));                 // he has said how he feels (or made the call himself)
+    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && (rest || recOf || (!!v && felt)));
     return { g, complete, lines: L.slice(0, 3).map(x => x[0]), say: [g].concat(L.slice(0, 3).map(x => x[1])).join(' ').replace(/’/g, "'").replace(/½/g, ' and a half') };
   }
 
@@ -1056,14 +1083,21 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
   function render() {
     const strip = document.getElementById('strip'), host = document.getElementById('view-today'); let e = el();
     const td = isoD(today), live = typeof mode !== 'undefined' && (mode === 'live' || mode === 'feedback');
-    if (!strip || !host || !td || isoD(sel) !== td || live) { if (e) { stop(); e.remove() } lastHtml = ''; return }
+    if (!strip || !host || !td || isoD(sel) !== td || live) { if (e) { stop(); e.remove() } lastHtml = ''; document.body.classList.remove('hasbrief');
+      const rd = document.getElementById('ready'), ses = document.getElementById('session');              // other days: the page's own order back
+      if (rd && ses && ses.parentNode === rd.parentNode && rd.previousElementSibling !== ses) { try { ses.parentNode.insertBefore(rd, ses.nextSibling) } catch (x) {} }
+      return }
     const w = words();
     const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Briefing</div>' +
       (state !== 'idle' || (slot() === 'morning' && w.complete) ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
       '<p class="hi">' + esc(w.g) + '</p>' + w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
     if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Briefing');
       e.addEventListener('click', ev => { if (ev.target.closest('.spk')) play() }) }
-    if (strip.nextSibling !== e) strip.parentNode.insertBefore(e, strip.nextSibling);   // first under the day strip, above "Your body today"
+    if (strip.nextSibling !== e) strip.parentNode.insertBefore(e, strip.nextSibling);   // first under the day strip
+    /* 19 Nov: the check-in comes straight after the briefing (the voice waits for it), then the session card;
+       "Your body today" sits under the session (garmin.js). The page itself puts the session first. */
+    { const rd = document.getElementById('ready'); if (rd && rd.parentNode === e.parentNode && e.nextSibling !== rd) e.parentNode.insertBefore(rd, e.nextSibling) }
+    document.body.classList.add('hasbrief');
     if (h !== lastHtml) { e.classList.toggle('fresh', !shownOnce && !window.__introOn); e.innerHTML = h; lastHtml = h; shownOnce = true;
       if (state !== 'idle' && audio == null && !(window.speechSynthesis && speechSynthesis.speaking)) setState('idle') }
     e.classList.toggle('talk', state === 'talk'); e.classList.toggle('wait', state === 'wait');
@@ -2731,7 +2765,7 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
     <section class="card" data-pg="train"><div class="head"><h2>Cardio intensity</h2><button type="button" class="evb" data-ev="polar">Evidence</button></div><div id="c-zone"></div></section>
     <section class="card" id="vo2card" data-pg="body"><div class="head"><h2>VO2 max</h2><button type="button" class="evb" data-ev="int4x4">Evidence</button></div><div id="c-vo2"></div>
       <form id="vo2form" class="vo2f">
-        <label for="vo2in"><small>New reading from your Garmin</small><input type="number" inputmode="numeric" min="20" max="90" id="vo2in" placeholder="51"></label>
+        <label for="vo2in"><small>Fills in from your Garmin when it changes. Or log a reading yourself</small><input type="number" inputmode="numeric" min="20" max="90" id="vo2in" placeholder="51"></label>
         <button type="submit">Log VO2 max</button>
       </form><p class="msg" id="vo2msg"></p></section>
     <section class="card" id="wtcard" data-pg="body"><h2>Body weight</h2><div id="c-wt"></div>
@@ -2816,7 +2850,10 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
    Change one here and both apps get it: run tools/build.py, then the gate for BOTH apps. */
 function regDefs(){Object.values(logs||{}).forEach(l=>(l&&l.exercises||[]).forEach(e=>{if(e&&e.def&&e.name&&!X[e.name])X[e.name]=e.def}))}
 function planOfKey(key,d){const i=layoutOf(d).indexOf(key);if(i<0)return planFor(d);return planFor(addDays(d,i-mdow(d)))}
-function series(k,from,to){const out=[];Object.keys(logs).forEach(d=>{const r=logs[d]&&logs[d].readiness;if(d>=from&&d<=to&&r&&typeof r[k]==='number')out.push({d,v:r[k]})});return out.sort((a,b)=>a.d<b.d?-1:1)}
+/* what he typed (or the check-in saved) wins; else his Garmin day (Kishen's app has garDay; 19 Nov: so past Garmin HRV and
+   resting HR count towards the normal range without having to open the check-in each of those mornings) */
+function series(k,from,to){const out=[],G=(typeof garDay!=='undefined'&&garDay)||{},ds=new Set(Object.keys(logs).concat(Object.keys(G).filter(d=>/^\d{4}-/.test(d))));
+  ds.forEach(d=>{if(d<from||d>to)return;const r=logs[d]&&logs[d].readiness,g=G[d];const v=r&&typeof r[k]==='number'?r[k]:g&&(k==='hrv'||k==='restingHR'||k==='bodyBattery'||k==='sleepScore')&&typeof g[k]==='number'?g[k]:undefined;if(typeof v==='number')out.push({d,v})});return out.sort((a,b)=>a.d<b.d?-1:1)}
 function gBase(k,before){const v=series(k,dOff(before,-14),dOff(before,-1)).map(x=>x.v);if(v.length<4)return null;v.sort((a,b)=>a-b);const m=v.length>>1;return v.length%2?v[m]:(v[m-1]+v[m])/2}
 function hrvState(d,today){const base=series('hrv',dOff(d,-30),dOff(d,-1)).map(x=>x.v).filter(v=>v>0);
   const rec=series('hrv',dOff(d,-6),dOff(d,-1)).map(x=>x.v).filter(v=>v>0);if(typeof today==='number'&&today>0)rec.push(today);
@@ -3350,8 +3387,8 @@ function renderLongevity(){const el=$('c-long');if(!el)return;const T=[];
   T.push(['Resting HR',r7.length?Math.round(avg(r7))+' bpm':'—',r7.length?'7-day average'+(rh.length>=14?(Math.round(avg(r7)-avg(rh.slice(0,7)))===0?' · steady since you started':' · '+(avg(r7)<avg(rh.slice(0,7))?'down ':'up ')+Math.abs(Math.round(avg(r7)-avg(rh.slice(0,7))))+' since you started'):''):'Fills from your Garmin boxes','ok','']);
   const wx=tests.filter(t=>t.waist!=null),w0=wx[0],w1=latest(wx);
   T.push(['Waist',w1?w1.waist+' cm':'—',w1?'at the navel · under 90 cm is the healthy range for Asian men':'Measured at each 4-week check-in',w1&&w1.waist>=90?'warn':'ok',w1&&w0&&w1!==w0?((w1.waist-w0.waist>=0?'+':'')+r1(w1.waist-w0.waist)+' cm since '+(w0.after?'week '+w0.after:'the start')):'']);
-  let pl=0,dn=0;for(let i=1;i<=28;i++){const dd=addDays(today,-i);if(weekOf(dd)<1)continue;const pp=effPlan(dd);if(pp.type==='rest'||pp.optional)continue;pl++;const st=stateOf(dd);if(st==='done'||st==='partial')dn++}
-  T.push(['Consistency',pl?Math.round(dn/pl*100)+'%':'—',pl?dn+' of '+pl+' sessions, last 4 weeks':'Starts counting Monday',pl&&dn/pl<0.75?'warn':'ok',pl?(dn/pl>=0.9?'Elite':dn/pl>=0.75?'On target':'Below the 90% target'):'']);
+  let pl=0,dn=0;for(let i=1;i<=28;i++){const dd=addDays(today,-i);if(weekOf(dd)<1)continue;const pp=effPlan(dd);if(pp.type==='rest'||pp.optional)continue;pl++;const st=stateOf(dd);if(st==='done'||st==='partial'||st==='recovery')dn++}   /* a recovery day he or the coach chose is following the plan, not a miss (19 Nov) */
+  T.push(['Consistency',pl?Math.round(dn/pl*100)+'%':'—',pl?dn+' of '+pl+' days on plan, last 4 weeks (recovery days count)':'Starts counting Monday',pl&&dn/pl<0.75?'warn':'ok',pl?(dn/pl>=0.9?'Elite':dn/pl>=0.75?'On target':'Below the 90% target'):'']);
   el.innerHTML=T.map(([n,v,s,c,f])=>'<div class="lt"><small>'+n+'</small><b class="num">'+esc(String(v))+'</b><span>'+esc(s)+'</span>'+(f?'<em class="'+c+'">'+esc(f)+'</em>':'')+'</div>').join('')}
 function logAt(l){const t=Date.parse(l.finishedAt||l.startedAt||'');if(!isNaN(t))return t;const d=parse(l.date);d.setHours(8,0,0,0);return d.getTime()}
 function wsets(e){return(e.sets||[]).filter(x=>x.t!=='W'&&x.done)}
@@ -5223,7 +5260,7 @@ function renderProgress(){renderMindCard();
   renderVo2();renderLongevity();renderWeight();
   // readiness
   const cut=iso(addDays(today,-27)),vc=r=>r.verdict==='go'?'var(--st-go)':r.verdict==='trim'?'var(--st-trim)':r.verdict==='recover'?'var(--st-rec)':'var(--accent)',vs=r=>r.verdict==='trim'?'tri':r.verdict==='recover'?'x':'';
-  const hv=ds.filter(d=>d>=cut&&logs[d].readiness&&typeof logs[d].readiness.hrv==='number').map(d=>({x:short(parse(d)),d,y:logs[d].readiness.hrv,c:vc(logs[d].readiness),shape:vs(logs[d].readiness),tip:({go:'Go',trim:'Trim',recover:'Recover'})[logs[d].readiness.verdict]||''}));
+  const hv=series('hrv',cut,iso(today)).map(({d,v})=>{const r=(logs[d]&&logs[d].readiness)||{};return{x:short(parse(d)),d,y:v,c:vc(r),shape:vs(r),tip:({go:'Go',trim:'Trim',recover:'Recover'})[r.verdict]||''}});   /* 19 Nov: Garmin days count too */
   const hva=hv.map(p=>{const w=hv.filter(q=>q.d<=p.d&&q.d>=iso(addDays(parse(p.d),-6))).map(q=>Math.log(q.y));return w.length>=3?Math.exp(mean(w)):null});
   const ssr=ds.filter(d=>d>=cut&&logs[d].readiness&&typeof logs[d].readiness.sleepScore==='number').map(d=>({x:short(parse(d)),d,y:logs[d].readiness.sleepScore,c:vc(logs[d].readiness),shape:vs(logs[d].readiness)}));
   const lg='<div class="legend"><span><svg width="12" height="12" viewBox="0 0 12 12" style="vertical-align:-1px;margin-right:4px"><circle cx="6" cy="6" r="5" fill="var(--st-go)"/></svg>Go</span><span><svg width="12" height="12" viewBox="0 0 12 12" style="vertical-align:-1px;margin-right:4px"><path d="M6 0.5 L11.5 11 L0.5 11 Z" fill="var(--st-trim)"/></svg>Trim</span><span><svg width="12" height="12" viewBox="0 0 12 12" style="vertical-align:-1px;margin-right:4px"><path d="M1.5 1.5 L10.5 10.5 M10.5 1.5 L1.5 10.5" stroke="var(--st-rec)" stroke-width="2.6" stroke-linecap="round"/></svg>Recover</span></div>';
@@ -6765,7 +6802,7 @@ try{
   /* 5. effort and weekly load */
   function load(){const t0=mon(today),wk=[];for(let w=3;w>=0;w--){const a=addDays(t0,-7*w);let s=0,c=0;for(let i=0;i<7;i++){const l=L()[day(addDays(a,i))];if(did(l)&&+l.rpe&&minsOf(l)){s+=+l.rpe*minsOf(l);c++}}wk.push({a,s,c})}
     const cur0=wk[3],prev=wk.slice(0,3).filter(w=>w.c),avg=prev.length?prev.reduce((n,w)=>n+w.s,0)/prev.length:0,mx=Math.max(1,...wk.map(w=>w.s));
-    if(!wk.some(w=>w.c))return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s" style="margin:0">After each workout, tap how hard it was (1–10) on the "How did it go?" screen. Effort × minutes gives your weekly load, the simplest well-tested way to spot a week that’s too big.</p></div>';
+    if(!wk.some(w=>w.c))return '';   /* 19 Nov: empty cards hide until there's data (the "How did it go?" screen explains the 1–10) */
     return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s">Effort (1–10) × minutes, added up per week. A week more than about 30% above your recent average is worth an easier day.</p><div class="u4big">'+Math.round(cur0.s)+'<small>this week'+(avg?' · avg '+Math.round(avg):'')+'</small></div>'+
       wk.map(w=>'<div class="u4row"><span>'+(w===cur0?'This wk':short(w.a))+'</span><div class="u4bar" aria-hidden="true"><i class="'+(avg&&w.s>avg*1.3?'c2':'c1')+'" style="width:'+(w.s/mx*100)+'%"></i></div><span>'+Math.round(w.s)+'</span></div>').join('')+'</div>'}
   /* 6–7. lifts: filtered PRs and target hit-rate (19 Nov: no longer a card; hitRate() feeds Coach → Exercise habits) */
@@ -6785,7 +6822,7 @@ try{
       (prs.length?prs.slice(-5).reverse().map(p=>'<div class="u4row" style="grid-template-columns:64px 1fr auto"><span>'+short(parse(p.k))+'</span><span>'+E(p.name)+'</span><b class="num">'+p.e1+' kg <small style="color:#2fbf8f">+'+p.up+'</small></b></div>').join(''):'<p class="u4e">None in the last 4 weeks that pass the filter.</p>')+'</div>'}
   /* 8. followed the coach's call? */
   function call(){const from=day(addDays(today,-27)),c=Object.keys(L()).filter(k=>k>=from&&L()[k].call).map(k=>L()[k].call);
-    const n=c.length,ok=c.filter(x=>x.ok).length;
+    const n=c.length,ok=c.filter(x=>x.ok).length;if(!n)return '';
     return '<div class="u4c"><h3>Followed the coach’s call?</h3><p class="u4s">When your coach or your check-in said Express or recovery, did you go with it? '+(n?'Last 4 weeks.':'Counting starts with your next workout.')+'</p>'+
       (n?'<div class="u4big">'+ok+' of '+n+'</div>'+c.slice(-4).reverse().map(x=>'<div class="u4row" style="grid-template-columns:1fr auto"><span>'+E(x.said)+'</span><span>'+(x.ok?'✓ went with it':'did '+E(x.did))+'</span></div>').join(''):'')+'</div>'}
 

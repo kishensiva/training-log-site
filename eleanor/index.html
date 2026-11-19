@@ -824,7 +824,9 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     const R = (typeof ready !== 'undefined' && ready) || {}, v = { ...t };
     KEYS.forEach(([k]) => { if (typeof R[k] === 'number') v[k] = R[k] });               // what he typed wins
     linkedUI(true);
-    if (!el) { el = document.createElement('section'); el.className = 'card'; el.id = 'gbody'; el.setAttribute('aria-label', 'Your body today'); strip.parentNode.insertBefore(el, strip.nextSibling) }
+    if (!el) { el = document.createElement('section'); el.className = 'card'; el.id = 'gbody'; el.setAttribute('aria-label', 'Your body today') }
+    { const ses = document.getElementById('session'), at = ses && ses.parentNode === strip.parentNode ? ses : strip;     // under the session card (19 Nov: briefing, check-in, session, then the numbers)
+      if (at.nextSibling !== el) at.parentNode.insertBefore(el, at.nextSibling) }
     const lg = (typeof logs !== 'undefined' && logs && logs[td]) || {}, trained = /^(done|partial|skipped|recovery)$/.test(lg.status || '');
     if (trained && !slimOpen) {                                    // after today's session: one line, tap for the full card
       const T = tiles(v, G), stp = typeof t.steps === 'number' ? '<span class="na">' + fmtN(t.steps) + ' steps</span>' : '';
@@ -895,7 +897,25 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
       '<table style="width:100%;font-size:14px;border-collapse:collapse"><thead><tr style="color:var(--muted);text-align:left"><th style="font-weight:500">Week of</th><th style="font-weight:500">Steps/day</th><th style="font-weight:500">Active kcal/day</th><th style="font-weight:500">Intensity min</th></tr></thead><tbody>' + rows + '</tbody></table>';
     if (c.innerHTML !== h) c.innerHTML = h;
   }
-  window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} };
+  /* 19 Nov: VO2 max from Garmin goes in by itself when it changes (no Log button needed); a number he logs still counts */
+  let vo2Busy = false;
+  async function vo2Auto() {
+    if (vo2Busy || typeof vo2 === 'undefined') return;
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, td = isoD(today), ks = Object.keys(G).filter(k => /^\d{4}-/.test(k) && k <= td && typeof G[k].vo2 === 'number').sort();
+    if (!ks.length) return; const k = ks[ks.length - 1], v = G[k].vo2, last = vo2.length ? vo2[vo2.length - 1] : null;
+    if (last && (last.value === v || last.date >= k)) return;
+    vo2Busy = true;
+    try { const d = await db(); if (!d) return; const doc = { date: k, value: v, at: new Date().toISOString(), src: 'garmin' };
+      await d.doc('vo2/' + k).set(doc); vo2 = vo2.filter(x => x.date !== k).concat(doc).sort((a, b) => a.date < b.date ? -1 : 1);
+      try { renderVo2(); renderLongevity() } catch (e) {} } catch (e) {} finally { vo2Busy = false }
+  }
+  /* 19 Nov: a month of past HRV and resting HR from Garmin, a few days per app open, so the normal range works now */
+  async function backfill() {
+    try { if (Date.now() - (+localStorage.getItem('garBf') || 0) < 6 * 3600e3) return } catch (e) {}
+    try { const r = await window.sbFn('garmin', { action: 'backfill', days: 8 });
+      if (r && !r.error) { try { localStorage.setItem('garBf', r.left ? '0' : String(Date.now())) } catch (e) {} } } catch (e) {}
+  }
+  window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} try { vo2Auto() } catch (e) {} };
 
   /* keep the check-in's labels right every time the page redraws it (after the page script has loaded) */
   const wrapSV = () => { if (typeof window.showVerdict === 'function') { const sv = window.showVerdict; window.showVerdict = function () { const r = sv.apply(this, arguments); try { if (document.body.classList.contains('glinked')) linkedUI(true) } catch (e) {} return r } } };
@@ -905,9 +925,191 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
     setInterval(window.garDayChanged, 4000);
     if (window.__introOn) { try { garPull() } catch (e) {} }
     setTimeout(fill, 2500);
+    setTimeout(backfill, 9000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(fill, 1200) });
     document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#nav')) setTimeout(fill, 800) }, true);
   }).catch(() => {});
+})();
+
+</script><script>
+/* Spoken briefing, JARVIS style (19 Nov 2026, Kishen's app only).
+   - A short card above "Your body today": "Good morning/afternoon/evening, sir." plus two or three lines written from
+     his own numbers (on screen in words, since the tiles below show the numbers; the voice reads the numbers) (Garmin sleep, HRV, resting HR, body battery), the day's plan and the morning call
+     (Go full / Trim / Recovery, his own pick wins), and whether today's session is logged.
+   - Morning (before 12): how he slept and the call. Afternoon (12–6pm): what's still to do. Evening (after 6pm): a
+     recap or a nudge, and a sleep line when last night was short. After the session it switches to a recap any time.
+   - The speaker plays it in "JARVIS", the voice he designed on ElevenLabs, through functions/brief (one clip per
+     wording per day, kept so a replay is free). It never plays by itself: he taps. Mornings only (his call, 19 Nov:
+     free plan, voice just for the morning briefing); afternoon and evening keep the card without the speaker.
+     The speaker shows once the watch has synced and today's call is made, so a morning makes one whole clip.
+   - If the clip can't be made (no credits, daily cap, offline) it reads it in the phone's own voice instead.
+   - The wording keeps no live counters (no step counts), so the clip doesn't need re-making as the day goes on. */
+(function () {
+  if (window.WEB_APP !== 'kishen') return;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const isoD = d => { try { return iso(d) } catch (e) { return '' } };
+  const css = `#gbrief{padding:16px 16px 14px;background:var(--kcard,var(--card));border:0;border-radius:20px;box-shadow:var(--ksh,none);display:flex;flex-direction:column;gap:10px}
+#gbrief .bh{display:flex;align-items:center;justify-content:space-between;gap:10px}
+#gbrief .bl{display:flex;align-items:center;gap:10px;font-size:12px;font-weight:600;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+#gbrief .wv{display:flex;align-items:center;gap:3px;height:18px}#gbrief .wv i{display:block;width:3px;height:5px;border-radius:2px;background:var(--gold);opacity:.55}
+#gbrief.talk .wv i{animation:gbw .9s ease-in-out infinite alternate;opacity:1}
+#gbrief.talk .wv i:nth-child(2){animation-delay:.15s}#gbrief.talk .wv i:nth-child(3){animation-delay:.3s}#gbrief.talk .wv i:nth-child(4){animation-delay:.45s}#gbrief.talk .wv i:nth-child(5){animation-delay:.6s}
+#gbrief.wait .wv i{animation:gbp 1s ease-in-out infinite;opacity:.9}
+@keyframes gbw{from{height:4px}to{height:17px}}@keyframes gbp{0%,100%{opacity:.25}50%{opacity:1}}
+#gbrief .spk{width:44px;height:44px;flex:none;border-radius:999px;border:1px solid var(--line);background:var(--soft);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
+#gbrief .spk svg{width:20px;height:20px}#gbrief .vn{font-size:12px;color:var(--muted);min-height:44px;display:flex;align-items:center}
+#gbrief .hi{margin:0;font-size:21px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
+#gbrief .ln{margin:0;font-size:15px;line-height:1.45;color:var(--muted)}#gbrief .ln b{color:var(--fg);font-weight:600}
+#gbrief.fresh .hi,#gbrief.fresh .ln{animation:gbin .6s cubic-bezier(.16,1,.3,1) both}#gbrief.fresh .ln:nth-of-type(2){animation-delay:.15s}#gbrief.fresh .ln:nth-of-type(3){animation-delay:.3s}#gbrief.fresh .ln:nth-of-type(4){animation-delay:.45s}
+@keyframes gbin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+body.hasbrief #verdict #vword,body.hasbrief #verdict #vtext,body.hasbrief #verdict .vpick small{display:none}
+body.hasbrief #verdict .vpick{grid-row:2;margin-top:0}body.hasbrief #verdict::before{content:"Your call";grid-column:1;grid-row:1;font-size:13px;font-weight:600}body.hasbrief #verdict.go::before{color:var(--ink)}
+body.hasbrief #ready:not(.answered) #verdict{display:none!important}
+@media (prefers-reduced-motion:reduce){#gbrief .wv i,#gbrief.fresh .hi,#gbrief.fresh .ln{animation:none!important}}`;
+  const se = document.createElement('style'); se.textContent = css; (document.head || document.documentElement).appendChild(se);
+
+  const SPK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+  const STOP = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
+  const NUM = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+  /* 320 → ["5h 20m", "5 hours 20 minutes"] */
+  const dur = m => { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60;
+    return [(h ? h + 'h' : '') + (h && r ? ' ' : '') + (r || !h ? r + 'm' : ''), (h ? h + (h === 1 ? ' hour' : ' hours') : '') + (h && r ? ' ' : '') + (r ? r + ' minutes' : '')] };
+  /* 150 → ["about 2½ hours", "about two and a half hours"] */
+  const halfH = m => { const q = Math.max(1, Math.round(m / 30)), h = Math.floor(q / 2), half = q % 2;
+    if (!h) return ['about half an hour', 'about half an hour'];
+    return ['about ' + h + (half ? '½' : '') + (h === 1 && !half ? ' hour' : ' hours'), 'about ' + (NUM[h] || h) + (half ? ' and a half' : '') + (h === 1 && !half ? ' hour' : ' hours')] };
+  const slot = () => { const h = new Date().getHours(); return h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening' };
+
+  function words() {
+    const td = isoD(today), G = (typeof garDay !== 'undefined' && garDay) || {}, t = G[td] || {}, s = slot();
+    const R = (typeof ready !== 'undefined' && ready) || {}, lg = (typeof logs !== 'undefined' && logs && logs[td]) || {};
+    let pp = {}; try { pp = effPlan(today) || {} } catch (e) {}
+    let v = null; try { v = verdictOf(R) } catch (e) {}
+    const title = String(pp.title || 'Today’s session').replace(/ · Express$/, '');
+    const sayT = title.replace(/(\d)\s*×\s*(\d)/g, '$1 by $2').replace(/\s*\+\s*/g, ' and ');
+    const rest = pp.type === 'rest' && !pp.optional, lift = pp.type === 'lift';
+    const recOf = typeof cur !== 'undefined' && cur && cur.date === td && cur.recoverOf;
+    const st = lg.status || '', trained = /^(done|partial)$/.test(st);
+    const L = [];                                                  // [screen, spoken]
+    /* sleep */
+    const sd = t.sleepDetail || {}, asleep = (sd.deepMin || 0) + (sd.remMin || 0) + (sd.lightMin || 0) || (typeof t.sleepHrs === 'number' ? t.sleepHrs * 60 : 0);
+    const short = asleep && typeof sd.needMin === 'number' ? sd.needMin - asleep : null;
+    let sleepL = null, sleepShortL = null;
+    if (asleep) { const [a, b] = dur(asleep);
+      if (short != null && short >= 30) { const [c, d] = halfH(short); sleepL = ['<b>' + c.replace(/^a/, 'A') + ' short</b> on sleep last night.', b + ' of sleep last night, ' + d + ' short of what you needed.'];
+        sleepShortL = ['You were ' + c + ' short on sleep last night, so an earlier night would do you good.', 'You were ' + d + ' short on sleep last night, so an earlier night would do you good.'] }
+      else sleepL = ['Slept about what you needed.', b + ' of sleep last night, right about what you needed.'] }
+    /* recovery numbers */
+    const parts = [], said = [];
+    if (typeof t.hrv === 'number') { let w = 'steady';
+      try { const h = hrvState(td, t.hrv); if (h && h.mode === 'trend') w = h.low ? 'below your normal' : t.hrv > h.hi * 1.15 ? 'above your normal' : 'steady';
+        else if (t.hrvStatus && t.hrvStatus !== 'balanced') w = /low|poor/.test(t.hrvStatus) ? 'below your normal' : 'a little off' } catch (e) {}
+      parts.push('HRV is ' + w); said.push('your HRV is ' + w) }
+    if (typeof t.restingHR === 'number') { try { const h = rhrState(td, t.restingHR); if (h && typeof h.up === 'number' && h.up >= 5) { parts.push('resting heart rate is up'); said.push('resting heart rate is up ' + Math.round(h.up) + ' beats') } } catch (e) {} }
+    if (typeof t.bodyBattery === 'number') { parts.push('battery is ' + (t.bodyBattery >= 60 ? 'good' : t.bodyBattery >= 30 ? 'fair' : 'low')); said.push('body battery is at ' + t.bodyBattery) }
+    const numsL = parts.length ? [parts.join(parts.length > 2 ? ', ' : ' and ').replace(/^./, c => c.toUpperCase()) + '.', said.join(said.length > 2 ? ', ' : ' and ').replace(/^./, c => c.toUpperCase()) + '.'] : null;
+    /* the plan and the call */
+    const felt0 = !!(R.quick || ['go', 'trim', 'recover'].includes(R.override));
+    let callL;
+    if (!rest && !recOf && !felt0) callL = ['<b>' + esc(title) + '</b> today. Tell me how you feel and I’ll make the call.', sayT + ' today. Tell me how you feel and I will make the call.'];
+    else if (rest) callL = ['Rest day today. An easy walk counts.', 'Rest day today. An easy walk counts.'];
+    else if (recOf) callL = ['Recovery day, as you asked: an easy walk and a stretch.', 'Recovery day, as you asked. An easy walk and a stretch.'];
+    else if (v === 'go') callL = ['<b>' + esc(title) + '</b>, full session.', sayT + ' today, full session.'];
+    else if (v === 'trim') callL = lift ? ['<b>' + esc(title) + '</b>, trimmed: one set fewer on each lift.', sayT + ' today, trimmed. One set fewer on each lift.'] : ['<b>' + esc(title) + '</b>, trimmed: keep it shorter and easier.', sayT + ' today, trimmed. Keep it shorter and easier.'];
+    else if (v === 'recover') callL = ['Your numbers say recovery: an easy walk and a stretch.', 'Your numbers say recovery today. An easy walk and a stretch.'];
+    else callL = ['<b>' + esc(title) + '</b> today. Tell me how you feel and I’ll make the call.', sayT + ' today. Tell me how you feel and I will make the call.'];
+    /* assemble */
+    if (trained || st === 'recovery' || st === 'skipped') {
+      if (st === 'done') L.push(['<b>' + esc(title) + '</b> is done. Nice work.', sayT + ' is done. Nice work.']);
+      else if (st === 'partial') L.push(['<b>' + esc(title) + '</b> logged, part done. It still counts.', sayT + ' logged, part done. It still counts.']);
+      else if (st === 'recovery') L.push(['Recovery day logged. Easy day, sir.', 'Recovery day logged. Easy day, sir.']);
+      else L.push(['Today’s session was skipped. Tomorrow’s a fresh start.', 'Today’s session was skipped. Tomorrow is a fresh start.']);
+      if (s === 'evening' && sleepShortL) L.push(sleepShortL); else if (st === 'recovery' || st === 'skipped') L.push(['Back at it tomorrow.', 'Back at it tomorrow.']); else L.push(['Refuel and rest up.', 'Refuel and rest up.']);
+    } else if (s === 'morning') {
+      if (sleepL) L.push(sleepL); else L.push(['Your watch hasn’t sent last night’s sleep yet.', 'Your watch has not sent last night’s sleep yet.']);
+      if (numsL) L.push(numsL);
+      L.push(callL);
+    } else if (s === 'afternoon') {
+      if (rest || recOf) L.push(callL);
+      else { L.push(['<b>' + esc(title) + '</b> is still to do.', sayT + ' is still to do.']);
+        if (v === 'trim') L.push(lift ? ['Keep it trimmed: one set fewer on each lift.', 'Keep it trimmed. One set fewer on each lift.'] : ['Keep it shorter and easier today.', 'Keep it shorter and easier today.']);
+        else if (v === 'recover') L.push(callL) }
+      if (sleepShortL) L.push(['Last night was short, so keep tonight early.', 'Last night was short, so keep tonight early.']);
+    } else {
+      if (rest || recOf) L.push(['Rest day nearly done.', 'Rest day nearly done.']);
+      else { L.push(['Today’s session hasn’t been logged yet.', 'Today’s session hasn’t been logged yet.']);
+        if (v === 'trim') L.push(['If you still plan to train, keep it to the trimmed version.', 'If you still plan to train, keep it to the trimmed version.']);
+        else if (v === 'recover') L.push(['Your numbers said recovery, so tonight’s a good night to rest.', 'Your numbers said recovery, so tonight is a good night to rest.']);
+        else L.push(['There’s still time for <b>' + esc(title) + '</b> if you’re up for it.', 'There is still time for ' + sayT + ' if you are up for it.']) }
+      if (sleepShortL) L.push(sleepShortL);
+    }
+    const g = 'Good ' + s + ', sir.';
+    /* complete = the watch has sent this morning's numbers and today's call is made (or the session is logged):
+       only then does the speaker show, so each morning makes one clip of the whole briefing, not a half one first */
+    const hasG = ['hrv', 'bodyBattery', 'sleepHrs', 'sleepScore'].some(k => typeof t[k] === 'number');
+    const felt = !!(R.quick || ['go', 'trim', 'recover'].includes(R.override));                 // he has said how he feels (or made the call himself)
+    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && (rest || recOf || (!!v && felt)));
+    return { g, complete, lines: L.slice(0, 3).map(x => x[0]), say: [g].concat(L.slice(0, 3).map(x => x[1])).join(' ').replace(/’/g, "'").replace(/½/g, ' and a half') };
+  }
+
+  /* ---------- playing ---------- */
+  let audio = null, state = 'idle', urls = {}, lastHtml = '', shownOnce = false;
+  const el = () => document.getElementById('gbrief');
+  function setState(s) { state = s; const e = el(); if (!e) return; e.classList.toggle('talk', s === 'talk'); e.classList.toggle('wait', s === 'wait');
+    const b = e.querySelector('.spk'); if (b) { b.innerHTML = s === 'idle' ? SPK : STOP; b.setAttribute('aria-label', s === 'idle' ? 'Hear the briefing' : 'Stop the briefing') } }
+  function stop() { try { if (audio) { audio.pause(); audio.src = '' } } catch (e) {} try { speechSynthesis.cancel() } catch (e) {} audio = null; setState('idle') }
+  function phoneVoice(text) {
+    try { const s = window.speechSynthesis; if (!s) return setState('idle'); s.cancel();
+      const u = new SpeechSynthesisUtterance(text), vs = s.getVoices() || [];
+      const p = vs.find(x => /en-GB/i.test(x.lang) && /\bmale\b|daniel|arthur|george|oliver/i.test(x.name)) || vs.find(x => /en-GB/i.test(x.lang)) || vs.find(x => /^en/i.test(x.lang));
+      if (p) u.voice = p; u.lang = p ? p.lang : 'en-GB'; u.rate = 1; u.pitch = 0.9;
+      u.onend = u.onerror = () => setState('idle'); setState('talk'); s.speak(u) } catch (e) { setState('idle') } }
+  async function play() {
+    if (state !== 'idle') return stop();
+    if (slot() !== 'morning' || !words().complete) return;
+    const w = words(), text = w.say, a = new Audio(); audio = a; a.preload = 'auto';   // made inside the tap, so the phone lets it play
+    setState('wait');
+    let url = urls[text];
+    if (!url) { try { const r = await window.sbFn('brief', { action: 'speak', text, date: isoD(today) }); url = r && r.url; if (url) urls[text] = url;
+        else if (r && r.code === 'daily_cap') { try { toast('Today’s voice clips are used up, so your phone is reading it') } catch (e) {} }
+        else if (r && (r.code === 'no_credits' || r.code === 'month_cap')) { try { toast('Voice credits are used up this month, so your phone is reading it') } catch (e) {} } } catch (e) {} }
+    if (audio !== a) return;                                       // he tapped stop while it was loading
+    if (!url) return phoneVoice(text);
+    a.src = url; a.onended = () => { if (audio === a) { audio = null; setState('idle') } }; a.onerror = () => { if (audio === a) { audio = null; phoneVoice(text) } };
+    try { await a.play(); if (audio === a) setState('talk') } catch (e) { if (audio === a) { audio = null; phoneVoice(text) } }
+  }
+
+  /* ---------- the card ---------- */
+  function render() {
+    const strip = document.getElementById('strip'), host = document.getElementById('view-today'); let e = el();
+    const td = isoD(today), live = typeof mode !== 'undefined' && (mode === 'live' || mode === 'feedback');
+    if (!strip || !host || !td || isoD(sel) !== td || live) { if (e) { stop(); e.remove() } lastHtml = ''; document.body.classList.remove('hasbrief');
+      const rd = document.getElementById('ready'), ses = document.getElementById('session');              // other days: the page's own order back
+      if (rd && ses && ses.parentNode === rd.parentNode && rd.previousElementSibling !== ses) { try { ses.parentNode.insertBefore(rd, ses.nextSibling) } catch (x) {} }
+      return }
+    const w = words();
+    const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Briefing</div>' +
+      (state !== 'idle' || (slot() === 'morning' && w.complete) ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
+      '<p class="hi">' + esc(w.g) + '</p>' + w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
+    if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Briefing');
+      e.addEventListener('click', ev => { if (ev.target.closest('.spk')) play() }) }
+    if (strip.nextSibling !== e) strip.parentNode.insertBefore(e, strip.nextSibling);   // first under the day strip
+    /* 19 Nov: the check-in comes straight after the briefing (the voice waits for it), then the session card;
+       "Your body today" sits under the session (garmin.js). The page itself puts the session first. */
+    { const rd = document.getElementById('ready'); if (rd && rd.parentNode === e.parentNode && e.nextSibling !== rd) e.parentNode.insertBefore(rd, e.nextSibling) }
+    document.body.classList.add('hasbrief');
+    if (h !== lastHtml) { e.classList.toggle('fresh', !shownOnce && !window.__introOn); e.innerHTML = h; lastHtml = h; shownOnce = true;
+      if (state !== 'idle' && audio == null && !(window.speechSynthesis && speechSynthesis.speaking)) setState('idle') }
+    e.classList.toggle('talk', state === 'talk'); e.classList.toggle('wait', state === 'wait');
+  }
+  window.briefRender = () => { try { render() } catch (e) {} };
+  const hook = () => {
+    const gd = window.garDayChanged; window.garDayChanged = function () { const r = gd ? gd.apply(this, arguments) : undefined; window.briefRender(); return r };
+    if (typeof window.showVerdict === 'function') { const sv = window.showVerdict; window.showVerdict = function () { const r = sv.apply(this, arguments); window.briefRender(); return r } }
+    window.briefRender(); setInterval(window.briefRender, 5000);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(hook, 0)); else setTimeout(hook, 0);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stop() });
 })();
 
 </script></head><body><title>Eleanor's Hyrox Log</title>
@@ -2571,7 +2773,10 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
    Change one here and both apps get it: run tools/build.py, then the gate for BOTH apps. */
 function regDefs(){Object.values(logs||{}).forEach(l=>(l&&l.exercises||[]).forEach(e=>{if(e&&e.def&&e.name&&!X[e.name])X[e.name]=e.def}))}
 function planOfKey(key,d){const i=layoutOf(d).indexOf(key);if(i<0)return planFor(d);return planFor(addDays(d,i-mdow(d)))}
-function series(k,from,to){const out=[];Object.keys(logs).forEach(d=>{const r=logs[d]&&logs[d].readiness;if(d>=from&&d<=to&&r&&typeof r[k]==='number')out.push({d,v:r[k]})});return out.sort((a,b)=>a.d<b.d?-1:1)}
+/* what he typed (or the check-in saved) wins; else his Garmin day (Kishen's app has garDay; 19 Nov: so past Garmin HRV and
+   resting HR count towards the normal range without having to open the check-in each of those mornings) */
+function series(k,from,to){const out=[],G=(typeof garDay!=='undefined'&&garDay)||{},ds=new Set(Object.keys(logs).concat(Object.keys(G).filter(d=>/^\d{4}-/.test(d))));
+  ds.forEach(d=>{if(d<from||d>to)return;const r=logs[d]&&logs[d].readiness,g=G[d];const v=r&&typeof r[k]==='number'?r[k]:g&&(k==='hrv'||k==='restingHR'||k==='bodyBattery'||k==='sleepScore')&&typeof g[k]==='number'?g[k]:undefined;if(typeof v==='number')out.push({d,v})});return out.sort((a,b)=>a.d<b.d?-1:1)}
 function gBase(k,before){const v=series(k,dOff(before,-14),dOff(before,-1)).map(x=>x.v);if(v.length<4)return null;v.sort((a,b)=>a-b);const m=v.length>>1;return v.length%2?v[m]:(v[m-1]+v[m])/2}
 function hrvState(d,today){const base=series('hrv',dOff(d,-30),dOff(d,-1)).map(x=>x.v).filter(v=>v>0);
   const rec=series('hrv',dOff(d,-6),dOff(d,-1)).map(x=>x.v).filter(v=>v>0);if(typeof today==='number'&&today>0)rec.push(today);
@@ -3105,8 +3310,8 @@ function renderLongevity(){const el=$('c-long');if(!el)return;const T=[];
   T.push(['Resting HR',r7.length?Math.round(avg(r7))+' bpm':'—',r7.length?'7-day average'+(rh.length>=14?(Math.round(avg(r7)-avg(rh.slice(0,7)))===0?' · steady since you started':' · '+(avg(r7)<avg(rh.slice(0,7))?'down ':'up ')+Math.abs(Math.round(avg(r7)-avg(rh.slice(0,7))))+' since you started'):''):'Fills from your Garmin boxes','ok','']);
   const wx=tests.filter(t=>t.waist!=null),w0=wx[0],w1=latest(wx);
   T.push(['Waist',w1?w1.waist+' cm':'—',w1?'at the navel · under 90 cm is the healthy range for Asian men':'Measured at each 4-week check-in',w1&&w1.waist>=90?'warn':'ok',w1&&w0&&w1!==w0?((w1.waist-w0.waist>=0?'+':'')+r1(w1.waist-w0.waist)+' cm since '+(w0.after?'week '+w0.after:'the start')):'']);
-  let pl=0,dn=0;for(let i=1;i<=28;i++){const dd=addDays(today,-i);if(weekOf(dd)<1)continue;const pp=effPlan(dd);if(pp.type==='rest'||pp.optional)continue;pl++;const st=stateOf(dd);if(st==='done'||st==='partial')dn++}
-  T.push(['Consistency',pl?Math.round(dn/pl*100)+'%':'—',pl?dn+' of '+pl+' sessions, last 4 weeks':'Starts counting Monday',pl&&dn/pl<0.75?'warn':'ok',pl?(dn/pl>=0.9?'Elite':dn/pl>=0.75?'On target':'Below the 90% target'):'']);
+  let pl=0,dn=0;for(let i=1;i<=28;i++){const dd=addDays(today,-i);if(weekOf(dd)<1)continue;const pp=effPlan(dd);if(pp.type==='rest'||pp.optional)continue;pl++;const st=stateOf(dd);if(st==='done'||st==='partial'||st==='recovery')dn++}   /* a recovery day he or the coach chose is following the plan, not a miss (19 Nov) */
+  T.push(['Consistency',pl?Math.round(dn/pl*100)+'%':'—',pl?dn+' of '+pl+' days on plan, last 4 weeks (recovery days count)':'Starts counting Monday',pl&&dn/pl<0.75?'warn':'ok',pl?(dn/pl>=0.9?'Elite':dn/pl>=0.75?'On target':'Below the 90% target'):'']);
   el.innerHTML=T.map(([n,v,s,c,f])=>'<div class="lt"><small>'+n+'</small><b class="num">'+esc(String(v))+'</b><span>'+esc(s)+'</span>'+(f?'<em class="'+c+'">'+esc(f)+'</em>':'')+'</div>').join('')}
 function logAt(l){const t=Date.parse(l.finishedAt||l.startedAt||'');if(!isNaN(t))return t;const d=parse(l.date);d.setHours(8,0,0,0);return d.getTime()}
 function wsets(e){return(e.sets||[]).filter(x=>x.t!=='W'&&x.done)}
