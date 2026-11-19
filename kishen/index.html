@@ -1437,6 +1437,7 @@ button:not(:disabled):active{transform:none}
 .ghr .gh b{font-family:var(--display);font-size:28px;line-height:1}
 .ghr .gr{display:grid;grid-template-columns:minmax(0,1fr) 62px 62px 52px;gap:6px;align-items:center;font-size:13px;padding:5px 0;border-top:1px solid var(--line)}
 .ghr .gr span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghr .gr span:first-child small.gsets{display:block;white-space:normal;color:var(--muted);font-size:12px;margin-top:1px;text-align:left}
 .ghr .gr .num{text-align:right}
 .ghr .gr .gg{color:var(--muted)}
 .ghr .gr b{font-family:var(--display);font-size:13px;letter-spacing:.06em;text-align:center;border-radius:6px;padding:2px 0}
@@ -1624,6 +1625,8 @@ html:has(.livebar):has(#restbar:not([hidden])){scroll-padding-bottom:calc(var(--
 .prfx .pw b{background:var(--ink);color:var(--volt)}
 .sum div{background:transparent;border-radius:0;border-top:1px solid var(--line);padding:10px 0}
 .sum b{font-size:36px}
+#session .sum{grid-template-columns:repeat(3,minmax(0,1fr))}
+#session .sum b{font-size:30px}
 .ghr,.lt,.swpanel,.picker{border-radius:12px;border:0;box-shadow:none}
 .pw .pt i{box-shadow:none}
 .mbar .tr i{background:var(--accent)}
@@ -2396,7 +2399,7 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
     <section class="card" id="inscard" data-pg="coach"><h2>Coach's watchlist</h2><div id="c-ins"></div></section>
     <section class="card" data-pg="coach"><h2>Block review</h2><p class="msg" id="rvsub" style="margin:0">Every 4 weeks your coach grades you against your targets, finds what's costing you, changes the plan and sets new targets.</p><div class="rvbtns" id="rvbtns"></div></section>
     <section class="card" data-pg="body"><div class="head"><h2>Longevity scorecard</h2><button type="button" class="evb" data-ev="vo2life">Evidence</button></div><p class="msg" style="margin:0">The numbers that predict how well you age, side by side.</p><div class="lgrid" id="c-long"></div></section>
-    <section class="card" data-pg="coach"><h2>Exercise habits · last 4 weeks</h2><p class="msg" style="margin:0">Lowest completion first. Your coach reads this every morning.</p><div id="c-habits"></div></section>
+    <section class="card" data-pg="coach"><h2>Exercise habits · last 4 weeks</h2><p class="msg" style="margin:0">Lowest completion first. "On target" is how often a set hit the coach's weight and reps: around 70–90% means the targets are right. Your coach reads this every morning.</p><div id="c-habits"></div></section>
     <section class="card" id="rotcard" data-pg="coach"><div class="head"><h2>Fresh exercises</h2><button type="button" class="evb" data-ev="vary">Evidence</button></div><div id="c-rot"></div>
       <details class="how"><summary>Why and when</summary>
         <p><b>Only when it's earned</b> <em class="ev m">Moderate</em> Rotating exercises every few weeks can add a little extra muscle growth and keeps training fresh, but changing them too often slows strength gains while you relearn the movement (Kassiano et al., systematic review, 2022). So a swap is only suggested when a lift hasn't progressed in 3 sessions in a row (best estimated 1RM, or reps for bodyweight moves) or keeps getting skipped.</p>
@@ -3023,7 +3026,9 @@ function renderLongevity(){const el=$('c-long');if(!el)return;const T=[];
   const gt=tests.filter(t=>t.gripL||t.gripR),g0=gt[0],g=latest(gt);
   T.push(['Grip R / L',g?(g.gripR||'–')+' / '+(g.gripL||'–'):'56 / 52','kg · median peak for men is 51',g&&g.gripL&&g.gripR&&g.gripL<g.gripR*0.95?'warn':'ok',g&&g.gripL&&g.gripR?'Left '+Math.round((1-g.gripL/g.gripR)*100)+'% behind right':g?'':'From your 2026 test']);
   const h=hackE1(),bw=bodyKg();T.push(['Leg strength',h?r1(h/bw)+'× BW':'—',h?'hack squat est. 1RM '+Math.round(h)+' kg ÷ '+bw+' kg':'Fills after your first hack squat','ok','']);
-  const rh=Object.keys(logs).sort().map(d=>({d,v:(logs[d].readiness||{}).restingHR})).filter(x=>typeof x.v==='number'),r7=rh.slice(-7),avg=a=>a.reduce((x,y)=>x+y.v,0)/a.length;
+  /* resting HR: what he typed wins, else his Garmin day (Kishen's app has garDay), so this matches the Today card's source */
+  const GD=(typeof garDay!=='undefined'&&garDay)||{},rds=[...new Set(Object.keys(logs).concat(Object.keys(GD).filter(k=>/^\d{4}-/.test(k))))].sort();
+  const rh=rds.map(d=>{const a=((logs[d]||{}).readiness||{}).restingHR,b=(GD[d]||{}).restingHR;return{d,v:typeof a==='number'?a:b}}).filter(x=>typeof x.v==='number'),r7=rh.slice(-7),avg=a=>a.reduce((x,y)=>x+y.v,0)/a.length;
   T.push(['Resting HR',r7.length?Math.round(avg(r7))+' bpm':'—',r7.length?'7-day average'+(rh.length>=14?(Math.round(avg(r7)-avg(rh.slice(0,7)))===0?' · steady since you started':' · '+(avg(r7)<avg(rh.slice(0,7))?'down ':'up ')+Math.abs(Math.round(avg(r7)-avg(rh.slice(0,7))))+' since you started'):''):'Fills from your Garmin boxes','ok','']);
   const wx=tests.filter(t=>t.waist!=null),w0=wx[0],w1=latest(wx);
   T.push(['Waist',w1?w1.waist+' cm':'—',w1?'at the navel · under 90 cm is the healthy range for Asian men':'Measured at each 4-week check-in',w1&&w1.waist>=90?'warn':'ok',w1&&w0&&w1!==w0?((w1.waist-w0.waist>=0?'+':'')+r1(w1.waist-w0.waist)+' cm since '+(w0.after?'week '+w0.after:'the start')):'']);
@@ -3688,7 +3693,7 @@ const CH={drinks:[['0','None','g'],['1-2','1–2','g'],['3-4','3–4','w'],['5+'
 /* the small line under each Garmin box: his usual for HRV/RHR, a plain read-out for the others */
 function showVerdict(){
   const v=verdictOf(ready),b=$('vbadge'),pp=effPlan(sel);
-  $('ready').hidden=!!(sel>today||mode==='live'||mode==='feedback'||mode==='night');
+  $('ready').hidden=!!(sel>today||mode==='live'||mode==='feedback'||mode==='night'||mode==='summary');   /* after the session the morning call has done its job */
   $('ready').classList.toggle('collapsed',!readyOpen);
   /* one way into the Garmin boxes at a time: the Garmin row until numbers are in, then this small link */
   $('gnudge').hidden=readyOpen||iso(sel)!==iso(today)||GK.concat('tr').some(k=>typeof ready[k]==='number');
@@ -3781,7 +3786,7 @@ function phaseLook(c){if(!c||c.type==='rest'||!(c.week>=1))return null;
   const seg=q.p==='del'?'<i class="on w"></i>':[...Array(q.n)].map((_,i)=>'<i'+(i<q.i?' class="on"':'')+'></i>').join('');
   return{k:q.p,plate:P[0],pc:P[1],name:P[2],sub:q.p==='del'?'Recovery week':'Week '+q.i+' of '+q.n,seg,note:P[3]}}
 function phaseStrip(L){return'<div class="phs"><svg viewBox="0 0 32 32" style="color:'+L.plate+'" aria-hidden="true" focusable="false"><use href="#ph-pl"/></svg><span class="phn">'+esc(L.name)+'</span><span class="phd">'+esc(L.sub)+'</span>'+(L.seg?'<span class="phseg" aria-hidden="true">'+L.seg+'</span>':'')+'</div>'}
-const phaseOpen=L=>'<section class="hero'+(L?' ph ph-'+L.k+'" style="--pc:'+L.pc:'')+'">'+(L?phaseStrip(L):'');
+const phaseOpen=L=>'<section class="hero'+(L?' ph ph-'+L.k+'" style="--pc:'+L.pc:'')+'">';   /* the block (e.g. Strength 2 of 3) is in the page header, not repeated on the card */
 function renderPreview(el){
   const future=sel>today,w=cur.week,isToday=dayDiff(sel,today)===0,ex=cur.exercises;
   const lightDay=(cur.key==='G'||cur.key==='F')&&(cur.checks||[]).length>0;
@@ -4526,13 +4531,18 @@ function renderSummary(el){
   if(cur.fromReply)h+='<p class="msg">Logged from your reply to the coach'+(cur.note?': '+esc(cur.note):'')+'.</p>';
   if(cur.status==='skipped')h+='<p class="msg">Skipped. Tomorrow\'s plan makes room for it so your must-dos still happen.</p>';
   else if(cur.type==='lift'){
-    h+='<div class="sum num"><div><b>'+(cur.durationMin!=null?cur.durationMin+' min':'–')+'</b><span>duration</span></div><div><b>'+st.vol.toLocaleString()+'</b><span>kg volume</span></div><div><b>'+st.d+'/'+st.t+'</b><span>sets</span></div><div><b>'+s.cur+'</b><span>streak</span></div>'+((w=>w?(w.hr?'<div><b>'+w.hr+'</b><span>avg bpm · watch</span></div>':'')+(w.kcal?'<div><b>'+w.kcal+'</b><span>kcal · watch</span></div>':''):'')(cur.practice?null:stvLift(cur.date)))+'</div>'+((w=>w&&(w.maxHr||w.wu.length)?'<p class="sumn">From Strava: '+[w.maxHr?'max '+w.maxHr+' bpm':'',w.wu.length&&w.kcal?'calories include your '+w.wu.map(x=>x.mins+' min '+(x.n==='warm-up'?'':x.n+' ')).join(' and ').trim()+' warm-up':''].filter(Boolean).join(', ')+'.</p>':'')(cur.practice?null:stvLift(cur.date)))+((vc=>vc?'<p class="sumn">Volume'+esc(vc.replace(/^ · /,': '))+'</p>':'')(volCmp(cur,prev)));
+    /* 19 Nov (his ask: nothing said twice): duration, volume, sets here; heart rate and calories live in "From your watch" below; the streak is at the top */
+    h+='<div class="sum num"><div><b>'+(cur.durationMin!=null?cur.durationMin+' min':'–')+'</b><span>duration</span></div><div><b>'+st.vol.toLocaleString()+'</b><span>kg volume</span></div><div><b>'+st.d+'/'+st.t+'</b><span>sets</span></div></div>'+((vc=>vc?'<p class="sumn">Volume'+esc(vc.replace(/^ · /,': '))+'</p>':'')(volCmp(cur,prev)));
     if((cur.skippedEx&&cur.skippedEx.length)||(cur.cutEx&&cur.cutEx.length))h+='<div class="note trim">'+(cur.skippedEx.length?'Not done today: <b>'+cur.skippedEx.map(esc).join(', ')+'</b>. ':'')+(cur.cutEx.length?'Cut short: '+cur.cutEx.map(esc).join(', ')+'. ':'')+'Your coach rebalances the week around it at 6:30am.</div>';
     (cur.prs||[]).forEach(p=>{h+='<div class="pr"><b>PR</b>'+esc(p.name)+' · est. 1RM '+p.e1+' kg</div>'});
-    if(!cur.practice)h+=ghostHtml(ghostOf(logs[cur.date]||cur),false);
-    h+='<div class="plist">'+(cur.exercises||[]).map(e=>{const w=e.sets.filter(x=>x.t!=='W'&&x.done),x=X[e.name]||{};return'<div class="pl"><div class="l"><b>'+esc(e.name)+'</b><small class="num">'+(w.length?w.map(x2=>(x2.t==='D'?'drop ':'')+(x.bw||!+x2.kg?(x.add&&!x.bw?'BW×':'')+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''):r1(x2.kg)+'×'+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''))).join(', '):'not done')+(e.ss?' · superset with '+esc(e.ss):'')+'</small></div></div>'}).join('')+'</div>';
-  }else if(cur.type==='cardio'&&cur.run){const d=cur.run.done||{};h+='<div class="sum num"><div><b>'+(d.mins||'–')+' min</b><span>time</span></div><div><b>'+(d.hr||'–')+'</b><span>avg bpm</span></div><div><b>'+(d.km||'–')+'</b><span>km</span></div><div><b>'+s.cur+'</b><span>streak</span></div></div>'}
-  else h+='<p class="msg">Logged. Streak '+s.cur+'.</p>';
+    {const setsOf=e=>{const w=e.sets.filter(x=>x.t!=='W'&&x.done),x=X[e.name]||{};return(w.length?w.map(x2=>(x2.t==='D'?'drop ':'')+(x.bw||!+x2.kg?(x.add&&!x.bw?'BW×':'')+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''):r1(x2.kg)+'×'+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''))).join(', '):'not done')+(e.ss?' · superset with '+esc(e.ss):'')};
+     const gh=cur.practice?null:ghostOf(logs[cur.date]||cur),inG=new Set(gh?gh.rows.map(r=>r.name):[]);let gx=gh?ghostHtml(gh,false):'';
+     /* a lift in the ghost race shows its sets under its name there, so it isn't listed twice */
+     (cur.exercises||[]).forEach(e=>{if(!inG.has(e.name))return;const a='<div class="gr"><span>'+esc(e.name)+'</span>';gx=gx.replace(a,'<div class="gr"><span>'+esc(e.name)+'<small class="gsets num">'+setsOf(e)+'</small></span>')});
+     h+=gx;const rest=(cur.exercises||[]).filter(e=>!inG.has(e.name));
+     if(rest.length)h+='<div class="plist">'+rest.map(e=>'<div class="pl"><div class="l"><b>'+esc(e.name)+'</b><small class="num">'+setsOf(e)+'</small></div></div>').join('')+'</div>'}
+  }else if(cur.type==='cardio'&&cur.run){const d=cur.run.done||{};h+='<div class="sum num"><div><b>'+(d.mins||'–')+' min</b><span>time</span></div><div><b>'+(d.hr||'–')+'</b><span>avg bpm</span></div><div><b>'+(d.km||'–')+'</b><span>km</span></div></div>'}
+  else h+='<p class="msg">Logged.</p>';
   if(!cur.practice&&cur.status!=='skipped')h+=stvHtml(cur.date);
   if(!cur.practice)h+='<p class="msg" style="color:var(--done)">'+(db?'Saved to your log ✓ Your coach sees it at 9:30pm and 6:30am.':'Kept on this phone. Open the tracker in the Claude app to sync.')+'</p>';
   h+='<button id="editW">Edit this log</button></section>';
@@ -4857,6 +4867,8 @@ function renderProgress(){renderMindCard();
   const ds=Object.keys(logs).sort();
   try{renderInsights();renderProposals()}catch(e){}
   $('c-habits').innerHTML=habitsHtml(exHabits(logs,iso(addDays(today,-27)),iso(today)));
+  /* how often the sets hit the coach's weight and reps sits on the same row (was its own card on Training) */
+  try{const M=window.UX4hit?window.UX4hit():{};$('c-habits').querySelectorAll('.lrow').forEach(r=>{const n=(r.querySelector('.ln b')||{}).textContent,o=M[n],sm=r.querySelector('.ln small');if(o&&o.n>=3&&sm)sm.textContent+=' · '+Math.round(o.h/o.n*100)+'% on target'})}catch(e){}
   try{renderRot()}catch(e){}
   // muscle sets this week
   const sun=wkStart(today),cnt={};Object.keys(TARGET).forEach(k=>cnt[k]=0);
@@ -4886,8 +4898,10 @@ function renderProgress(){renderMindCard();
     $('c-hr').innerHTML=(hms.length>1?'<div class="chips" style="margin-bottom:8px">'+hms.map(m=>'<button class="chip" data-hrm="'+m+'" aria-pressed="'+(m===hrMode)+'">'+(CMODES.find(c=>c[0]===m)||[m,m])[1]+'</button>').join('')+'</div>':'')+
       '<div class="big"><b class="num">'+l+' bpm</b><span>'+(easy.length>1?(l<=f?'':'+')+(l-f)+' bpm since '+easy[0].x:'first easy '+nm+' logged')+(ef.length?' · '+ef[ef.length-1].eff+' m per heartbeat':'')+'</span></div>'+lineChart(easy,{label:lab,span:12,unit:' bpm',empty:'Two easy '+nm+'s with heart rate and the trend appears.'})+'<p class="msg">The same easy effort at a lower heart rate means a bigger aerobic engine. Each type of cardio is charted on its own, since bike heart rate runs lower than running at the same effort.</p>';
     $('c-hr').querySelectorAll('[data-hrm]').forEach(b=>b.onclick=()=>{hrMode=b.dataset.hrm;renderProgress()})}
-  else $('c-hr').innerHTML='<p class="empty">Log heart rate on your easy cardio and long runs (a Garmin screenshot fills it in). This line should drift down as your aerobic fitness and VO2 max improve.</p>';
+  else $('c-hr').innerHTML='<p class="empty">Your watch fills this in after your easy cardio and long runs: easy heart rate, and the minutes in each heart-rate zone. The easy line should drift down as your aerobic fitness and VO2 max improve.</p>';
   try{renderZones()}catch(e){}
+  /* one empty cardio card, not two saying the same thing */
+  try{const z=$('c-zone'),zs=z&&z.closest('section');if(zs)zs.hidden=!easyAll.length&&!!z.querySelector('.empty')}catch(e){}
   renderVo2();renderLongevity();renderWeight();
   // readiness
   const cut=iso(addDays(today,-27)),vc=r=>r.verdict==='go'?'var(--st-go)':r.verdict==='trim'?'var(--st-trim)':r.verdict==='recover'?'var(--st-rec)':'var(--accent)',vs=r=>r.verdict==='trim'?'tri':r.verdict==='recover'?'x':'';
@@ -4976,7 +4990,7 @@ try{$('view-today').insertBefore($('session'),$('ready'))}catch(_){}
 function tidyToday(){const vt=$('view-today');if(!vt)return;vt.dataset.day=cur?cur.type:'';
   const q=$('quests');if(q&&q.children.length){let b=q.querySelector('.foldb');if(!b){b=document.createElement('button');b.type='button';b.className='foldb';b.onclick=()=>{foldQ=!foldQ;tidyToday()};q.insertBefore(b,q.firstChild)}
     const all=q.querySelectorAll('.quest'),dn=q.querySelectorAll('.quest.done');b.setAttribute('aria-expanded',String(!foldQ));
-    b.innerHTML='<span><b>Quests · '+dn.length+' of '+all.length+'</b><small>'+[...all].map(x=>esc(x.firstElementChild.textContent)).join(' · ')+'</small></span><span class="chev" aria-hidden="true">'+(foldQ?'›':'▴')+'</span>';q.classList.toggle('folded',foldQ)}
+    b.innerHTML='<span><b>Quests · '+dn.length+' of '+all.length+' done</b><small>'+[...all].map(x=>{const c=(x.querySelector('small')||{}).textContent||'';return esc(x.firstElementChild.textContent+(c?' '+c.replace(/ of /,'/'):''))}).join(' · ')+'</small></span><span class="chev" aria-hidden="true">'+(foldQ?'›':'▴')+'</span>';q.classList.toggle('folded',foldQ)}
   const t=$('tellc');if(t){let b=t.querySelector('.foldb');if(!b){b=document.createElement('button');b.type='button';b.className='foldb';b.onclick=()=>{foldC=!foldC;tidyToday();if(!foldC)try{$('reqtext').focus()}catch(_){}};t.insertBefore(b,t.firstChild)}
     const pend=(typeof reqs!=='undefined'?reqs:[]).filter(r=>r.status!=='applied'&&!r.auto).length;b.setAttribute('aria-expanded',String(!foldC));
     b.innerHTML='<span><b>Tell your coach'+(pend?' · '+pend+' waiting':'')+'</b><small>Food, drinks, aches, plan changes</small></span><span class="chev" aria-hidden="true">'+(foldC?'›':'▴')+'</span>';t.classList.toggle('folded',foldC)}
@@ -6436,7 +6450,11 @@ try{
     if(!wk.some(w=>w.c))return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s" style="margin:0">After each workout, tap how hard it was (1–10) on the "How did it go?" screen. Effort × minutes gives your weekly load, the simplest well-tested way to spot a week that’s too big.</p></div>';
     return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s">Effort (1–10) × minutes, added up per week. A week more than about 30% above your recent average is worth an easier day.</p><div class="u4big">'+Math.round(cur0.s)+'<small>this week'+(avg?' · avg '+Math.round(avg):'')+'</small></div>'+
       wk.map(w=>'<div class="u4row"><span>'+(w===cur0?'This wk':short(w.a))+'</span><div class="u4bar" aria-hidden="true"><i class="'+(avg&&w.s>avg*1.3?'c2':'c1')+'" style="width:'+(w.s/mx*100)+'%"></i></div><span>'+Math.round(w.s)+'</span></div>').join('')+'</div>'}
-  /* 6–7. lifts: filtered PRs and target hit-rate */
+  /* 6–7. lifts: filtered PRs and target hit-rate (19 Nov: no longer a card; hitRate() feeds Coach → Exercise habits) */
+  window.UX4hit=function(){const from=day(addDays(today,-27)),M={};
+    Object.keys(L()).filter(k=>k>=from&&did(L()[k])&&L()[k].type==='lift').forEach(k=>(L()[k].exercises||[]).forEach(e=>{const x=X[e.name]||{};if(x.unit||x.bw)return;
+      const w=(e.sets||[]).filter(z=>z.t==='N'&&z.done&&z.tkg!=null&&z.treps!=null);if(!w.length)return;const o=M[e.name]||(M[e.name]={n:0,h:0});
+      w.forEach(z=>{o.n++;if(+z.kg>=+z.tkg-0.01&&+z.reps>=+z.treps)o.h++})}));return M};
   function lifts(){const from=day(addDays(today,-27)),M={};
     Object.keys(L()).filter(k=>k>=from&&did(L()[k])&&L()[k].type==='lift').sort().forEach(k=>(L()[k].exercises||[]).forEach(e=>{const x=X[e.name]||{};if(x.unit||x.bw)return;
       const w=(e.sets||[]).filter(z=>z.t==='N'&&z.done&&z.tkg!=null&&z.treps!=null);if(!w.length)return;const o=M[e.name]||(M[e.name]={n:0,h:0,s:0});
@@ -6455,7 +6473,11 @@ try{
 
   function render(){const host=document.getElementById('view-prog');if(!host||typeof view==='undefined'||view!=='prog')return;
     let s=document.getElementById('ux4');if(!s){s=document.createElement('section');s.id='ux4';s.dataset.pg='train';s.setAttribute('aria-label','Your numbers');const first=host.querySelector('section[data-pg="train"]');host.insertBefore(s,first||null)}
-    let h='';[split,load,easy,lifts,hrv,complete,call].forEach(f=>{try{h+=f()}catch(e){console.error(e)}});s.innerHTML=h}
+    /* 19 Nov (his ask: nothing said twice): HRV lives in Body → Readiness; target hit-rate moved into Coach → Exercise habits;
+       personal bests are in Strength → Best per lift; "Data this week" went when Garmin made the numbers automatic;
+       the easy-run card only shows once there is an easy run to judge (the empty note is on Easy cardio heart rate) */
+    let h='';[split,load,easyIf,call].forEach(f=>{try{h+=f()}catch(e){console.error(e)}});s.innerHTML=h}
+  function easyIf(){const x=easy();return /No easy runs with heart rate/.test(x)?'':x}
   const rp=renderProgress;renderProgress=function(){const r=rp.apply(this,arguments);try{render()}catch(e){}return r};
 
   /* effort 1–10 on the "How did it go?" screen */
@@ -6470,6 +6492,8 @@ try{
         const said=saidRest?'Coach: rest day':saidRec?'Check-in: recovery day':'Coach: Express';
         const ok=(saidRest||saidRec)?did==='recovery'||did==='skipped':did!=='the full session';cur.call={said,did,ok,on:cur.date}}}}catch(e){}
     return fs.apply(this,arguments)};
+  /* VO2 max: the number itself is on the Longevity scorecard just above; this card keeps the trend and the log form */
+  if(typeof renderVo2==='function'){const rv=renderVo2;renderVo2=function(){const r=rv.apply(this,arguments);try{const b=document.querySelector('#c-vo2 > .big');if(b)b.remove()}catch(e){}return r}}
   window.UX4={render};
 })();
 }catch(e){console.error(e)}
