@@ -653,6 +653,11 @@ input[type=text],input:not([type]),textarea{background:var(--bg);border:1px soli
 .verdict.trim b{color:var(--warn)}
 .verdict.recover b{color:var(--miss)}
 .verdict span{font-size:14px}
+.verdict .vpick{grid-column:1/-1;grid-row:3;display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
+.verdict .vpick small{flex:1 0 100%;font-size:12px;opacity:.75}
+.verdict .vpick button{flex:1;min-height:40px;border-radius:999px;border:1.5px solid color-mix(in srgb,currentColor 35%,transparent);background:transparent;color:inherit;font:600 14px var(--body,inherit);text-transform:none;letter-spacing:0;padding:0 10px}
+.verdict .vpick button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.verdict.go .vpick button[aria-pressed="true"]{background:var(--ink);color:var(--volt);border-color:var(--ink)}
 .collapsed .q,.collapsed .snap{display:none}
 .primary{min-height:50px;font-size:18px}
 .ghost{background:none}
@@ -2184,7 +2189,7 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
         <div class="q" style="margin-top:8px"><span>Work stress</span><div class="chips" id="q-stress"></div></div>
       </details></div>
       <div class="snap" id="snapwrap" hidden><label><input type="file" accept="image/*" id="snap-ready">Read from Garmin screenshot</label><span class="msg" id="snapmsg"></span></div>
-      <div class="verdict" id="verdict" hidden><b id="vword"></b><span id="vtext"></span><button type="button" class="evb" id="vev" data-ev="hrv">Evidence</button></div>
+      <div class="verdict" id="verdict" hidden><b id="vword"></b><span id="vtext"></span><button type="button" class="evb" id="vev" data-ev="hrv">Evidence</button><div class="vpick" id="vpick" role="group" aria-label="Your call"></div></div>
       <button class="morebtn" id="readyToggle">Add Garmin detail</button>
     </section>
 
@@ -2346,7 +2351,8 @@ function gFlags(r,day){const f=[],d=day||iso(sel);if(!r)return f;
   if(typeof r.hrv==='number'){const h=hrvState(d,r.hrv);if(h.low)f.push(['trim',h.mode==='trend'?'HRV 7-day average below your normal range':'HRV '+Math.round((1-r.hrv/h.med)*100)+'% under your usual'])}
   if(typeof r.restingHR==='number'){const h=rhrState(d,r.restingHR);if(h.acute)f.push(['recover','resting HR '+Math.round(h.up)+' bpm above your baseline']);else if(h.sustained)f.push(['trim','resting HR up '+Math.round(h.up)+' bpm and trending up'])}
   return f}
-function verdictOf(r){if(!r||(!r.quick&&r.sleep==null&&r.tr==null&&!r.legs&&!r.stress&&!GK.some(k=>typeof r[k]==='number')))return null;
+function verdictOf(r){if(r&&['go','trim','recover'].includes(r.override))return r.override; /* his own call (Kishen's app, 19 Nov) beats the numbers */
+  if(!r||(!r.quick&&r.sleep==null&&r.tr==null&&!r.legs&&!r.stress&&!GK.some(k=>typeof r[k]==='number')))return null;
   const g=gFlags(r);
   if(r.quick==='wrecked'||g.some(x=>x[0]==='recover')||g.length>=3)return'recover';
   return g.length?'trim':'go'}
@@ -2390,7 +2396,7 @@ function gHints(){const d=iso(sel);
     em.textContent=t;em.className=c})}
 function queueReady(){readyBusy=true;clearTimeout(window._rt);const k0=iso(sel);window._rt=setTimeout(()=>saveReady(k0),700)}
 async function saveReady(k0){
-  const r={...ready};r.verdict=verdictOf(r);r.at=new Date().toISOString();const k=k0||iso(sel);
+  const r={...ready};r.verdict=verdictOf(r);if(r.override)r.autoVerdict=verdictOf({...r,override:undefined});else delete r.autoVerdict;r.at=new Date().toISOString();const k=k0||iso(sel);
   if(db){try{await db.doc('log/'+k).update({readiness:r})}catch(e){try{await db.doc('log/'+k).set({...(logs[k]||{}),date:k,week:weekOf(sel),status:(logs[k]&&logs[k].status)||'open',readiness:r})}catch(e2){}}}
   readyBusy=false;
   if(mode==='preview'&&k===iso(sel)){logs[k]={...(logs[k]||{date:k}),readiness:r};loadSession();renderSession()}
@@ -3027,7 +3033,7 @@ function weekCounts(any){const sun=wkStart(any);let done=0,key=0;
   for(let i=0;i<7;i++){const d=addDays(sun,i),p=effPlan(d),st=stateOf(d);
     if(p.type!=='rest'&&!p.optional&&(st==='done'||st==='partial')){done++;if(['A','B',TXT.weekCounts].includes(p.key))key++}}
   return{done,key}}
-function habitsHtml(rows,limit){if(!rows.length)returnTXT.habitsHtml;
+function habitsHtml(rows,limit){if(!rows.length)return TXT.habitsHtml;
   return rows.slice(0,limit||8).map(r=>{const c=r.pct>=90?'var(--done)':r.pct>=60?'var(--warn)':'var(--miss)';
     return'<div class="lrow"><div class="ln"><b>'+esc(r.n)+'</b><small class="num">'+r.done+' of '+r.plan+' sets'+(r.skip?' · skipped '+r.skip+' of '+r.sess+(r.skip>=2&&r.tail===r.skip?', always at the end':''):'')+(r.cut?' · cut short '+r.cut+'×':'')+'</small></div><div class="lb"><i style="width:'+Math.max(3,r.pct)+'%;background:'+c+'"></i></div><span class="num lp" style="color:'+c+'">'+r.pct+'%</span></div>'}).join('')}
 function mobHtml(){const L=mobList(cur.key),c=cur.mobility||{},n=L.filter((_,i)=>c[i]).length;
@@ -3528,8 +3534,16 @@ function showVerdict(){
   const why=v!=='go'&&g.length?(v==='recover'&&g.some(x=>x[0]==='recover')?g.filter(x=>x[0]==='recover'):g).map(x=>x[1]):[];
   const pn=v==='go'?pushNote(ready):'';
   {const t=(why.join(' ')+' '+(ready.quick||'')).toLowerCase();$('vev').dataset.ev=/resting hr/.test(t)?'rhr':/hrv/.test(t)?'hrv':/sleep score|under 6/.test(t)?'sleep':/drinks/.test(t)?'alcohol':/readiness|body battery/.test(t)?'garmin':/tired|sore|stress|wrecked|meh/.test(t)?'subj':'hrv'}
-  $('vtext').textContent=(why.length?why.join(', ').replace(/^./,c=>c.toUpperCase())+'. ':'')+(pn||(push?'Good day to push your last set on each lift.':VTXT[v]));
+  {const own=['go','trim','recover'].includes(ready.override),auto=own?verdictOf({...ready,override:undefined}):v,NM={go:'go',trim:'trim',recover:'recovery'};
+   if(own){const ag=gFlags(ready),aw=auto&&auto!=='go'?(auto==='recover'&&ag.some(x=>x[0]==='recover')?ag.filter(x=>x[0]==='recover'):ag).map(x=>x[1]):[];
+     $('vtext').textContent='Your call. '+(auto&&auto!==v?'The numbers said '+NM[auto]+(aw.length?' ('+aw.join(', ')+')':'')+'. ':'')+VTXT[v]}
+   else $('vtext').textContent=(why.length?why.join(', ').replace(/^./,c=>c.toUpperCase())+'. ':'')+(pn||(push?'Good day to push your last set on each lift.':VTXT[v]));
+   const vp=$('vpick');if(vp)vp.innerHTML='<small>'+(own?'Your call · tap '+NM[auto||'go']+' to follow the numbers again':'Your call')+'</small>'+[['go','Go full'],['trim','Trim'],['recover','Recovery']].map(([k,t])=>'<button type="button" data-ov="'+k+'" aria-pressed="'+(v===k)+'">'+t+'</button>').join('')}
 }
+$('verdict').addEventListener('click',e=>{const b=e.target.closest('button[data-ov]');if(!b)return;const o=b.dataset.ov,auto=verdictOf({...ready,override:undefined});
+  if(o===auto||(!auto&&o==='go'))delete ready.override;else ready.override=o;
+  showVerdict();readyBusy=true;saveReady(iso(sel));
+  try{toast(ready.override?({go:'Your call: full session',trim:'Your call: trimmed session',recover:'Your call: recovery day'})[o]:'Back to what the numbers say')}catch(_){}});
 let feelEdit=false;
 $('feelChange').onclick=()=>{feelEdit=true;showVerdict()};
 $('ready').addEventListener('click',e=>{const b=e.target.closest('button[data-q]');if(!b)return;const k=b.dataset.q;
@@ -3571,8 +3585,8 @@ function noteHtml(){
   const n=[],lg=cur&&cur.practice?{}:(logs[iso(sel)]||{}),v=lg.readiness&&lg.readiness.verdict;let cls='';
   if(cur&&cur.practice)n.push('Practice: '+esc(cur.title)+' as it will look on '+DN[parse(cur.date).getDay()]+' '+short(parse(cur.date))+'. Nothing is saved.');
   if(coach&&coach.date===iso(sel)&&coach.note)n.push(esc(coach.note)+(Array.isArray(coach.evidence)?' '+coach.evidence.filter(x=>typeof x==='string'&&evFind(x)).slice(0,3).map(x=>evb(x,evFind(x).title)).join(' '):''));
-  if(v==='trim'&&cur.type==='lift'){n.push('Trimmed from your check-in: one less set, no weight increases.');cls='trim'}
-  if(cur.recoverOf){n.push('Recovery day from your check-in. '+esc(cur.recoverOf)+' moves to another day.');cls='recover'}
+  if(v==='trim'&&cur.type==='lift'){n.push((lg.readiness&&lg.readiness.override?'Trimmed, your call':'Trimmed from your check-in')+': one less set, no weight increases.');cls='trim'}
+  if(cur.recoverOf){n.push((lg.readiness&&lg.readiness.override?'Recovery day, your call. ':'Recovery day from your check-in. ')+esc(cur.recoverOf)+' moves to another day.');cls='recover'}
   if(cur.type==='lift'&&cur.week>=1){const lightDay=cur.key==='G'||cur.key==='F',rt=rirT(cur.week),lr=Math.max(1,rt-1),lowerDay=!lightDay&&(cur.exercises||[]).some(e=>LEGM.includes(((X[e.name]||{}).m||[])[0]));
     {const ph=PHASE(cur.week);n.push(lightDay&&ph!=='del'?'Light session: the same rep ranges every week, whatever the block. The easy cardio and stretching are in the tick list at the end.':ph==='str'?'Strength block: main lifts 6–8 reps with 3 min rest, everything else as usual. '+evb('phases','Why?'):ph==='del'?'Deload week: half the sets, about 10% lighter, nothing hard. You come back fresher for the next block. '+evb('deload','Why?'):'Hypertrophy block: 8–12 reps on the main lifts, 12–15 on isolation. '+evb('phases','Why?'))}
     n.push('Effort: stop about '+rt+' rep'+(rt>1?'s':'')+' short of failure. '+evb('rir'));
@@ -5271,6 +5285,12 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
   const preview=(title,lines,warn,apply)=>{msg.pv={title,lines,warn,apply,state:'wait'};odyRender(true);return{status:'awaiting_confirmation',shown:title,note:'Shown to him as a card with Apply and Cancel. Nothing has changed yet.'}};
   const dbOk=()=>{if(!db)throw new Error('Saving is not available right now.')};
   return[
+  {name:'set_day_call',description:'Set today\'s Go / Trim / Recovery call. The check-in already makes a call from how he feels and his Garmin numbers (see Check-in today); you may suggest a different one with the reason, but only use this tool when he asks for it or says yes to your suggestion: his call always wins over the numbers. go = full session, trim = one less set and no weight increases, recover = mobility and a walk, the session moves to another day. auto = back to what the numbers say. Only before the workout starts.',
+   inputSchema:{type:'object',properties:{call:{type:'string',enum:['go','trim','recover','auto']}},required:['call']},
+   async execute(a){dbOk();const k=iso(today);if(iso(sel)!==k)return{error:'Only today\'s call can be changed, and only from Today.'};
+     if(mode==='live'||(logs[k]&&['done','partial','in_progress'].includes(logs[k].status)))return{error:'The workout has already started or finished, so the call can\'t change now.'};
+     const c=String(a.call||''),auto=verdictOf({...ready,override:undefined});if(c==='auto'||c===auto)delete ready.override;else if(['go','trim','recover'].includes(c))ready.override=c;else return{error:'call must be go, trim, recover or auto'};
+     readyBusy=true;await saveReady(k);try{showVerdict()}catch(_){}return{applied:true,call:verdictOf(ready),numbersSaid:auto||'none',hisOwn:!!ready.override}}},
   {name:'tweak_session',description:'Change one day\'s session: weight, scale (all weights by pct), sets (sets and/or reps), remove, add, swap (exercise to another), order, warmup (short), express, full (undo Express: back to the full session, his or the coach\'s Express), technique (drop or superset, his own). Small changes apply at once; several exercise changes, or removing/swapping on a later day, show him a preview to Apply. Returns what changed.',
    inputSchema:{type:'object',properties:{date:{type:'string',description:'YYYY-MM-DD, default today'},changes:{type:'array',items:{type:'object',properties:{op:{type:'string',enum:['weight','scale','sets','remove','add','swap','order','warmup','express','full','technique']},exercise:{type:'string'},kg:{type:'number'},change:{type:'number',description:'kg up (+) or down (-)'},pct:{type:'number',description:'scale: -20 to 20'},exercises:{type:'array',items:{type:'string'}},sets:{type:'number'},reps:{type:'number'},to:{type:'string'},after:{type:'string'},list:{type:'array',items:{type:'string'}},type:{type:'string',enum:['drop','superset']},with:{type:'string'}},required:['op']}},why:{type:'string'}},required:['changes']},
    async execute(a){dbOk();const k=odyDate(a.date);odyOpenDay(k);const{ops,lines}=odyBuildOps(k,a.changes);const sum=lines.map(l=>l[1]).join('; ');
@@ -5349,7 +5369,7 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
   {name:'readiness',description:'His morning check-ins between two dates: how he felt, legs, stress, HRV, resting HR, sleep, sleep score, Body Battery, Training Readiness, and the verdict.',
    inputSchema:{type:'object',properties:{from:{type:'string'},to:{type:'string'}},required:['from']},
    execute(a){const f=String(a.from||'').slice(0,10),t=String(a.to||iso(today)).slice(0,10);
-     const rows=Object.keys(logs).filter(k=>k>=f&&k<=t).sort().map(k=>{const r=(logs[k]||{}).readiness;if(!r)return null;const o={date:k};['quick','legs','stress','hrv','restingHR','sleep','sleepScore','bodyBattery','tr','verdict'].forEach(x=>{if(r[x]!=null&&r[x]!=='')o[x]=r[x]});return o}).filter(Boolean);
+     const rows=Object.keys(logs).filter(k=>k>=f&&k<=t).sort().map(k=>{const r=(logs[k]||{}).readiness;if(!r)return null;const o={date:k};['quick','legs','stress','hrv','restingHR','sleep','sleepScore','bodyBattery','tr','verdict','override','autoVerdict','auto'].forEach(x=>{if(r[x]!=null&&r[x]!=='')o[x]=r[x]});return o}).filter(Boolean);
      return{from:f,to:t,rows:rows.slice(-60)}}},
   {name:'ask_coach',description:'Pass a request to his 6:30am coach for anything you can\'t change yourself (future weeks, plan structure, phases, deloads, targets, new goals). The coach reads it the next morning. Applies at once.',
    inputSchema:{type:'object',properties:{text:{type:'string',description:'the request in his words, one or two sentences'}},required:['text']},
@@ -5366,6 +5386,8 @@ function odyCtx(){const L=[],t=today,ws=wkStart(t),w=weekOf(t);
   const day=dayDiff(sel,t)>=0?sel:t,s=buildSession(day);odyRestorePhase();
   if(s&&s.type==='lift')L.push('Session on '+iso(day)+' ('+s.title+'): '+(s.exercises||[]).map(e=>{const x=X[e.name]||{},n=odyW(e);return e.name+' '+n.length+'×'+(n[0]?n[0].treps:'')+(x.unit==='s'?' s':'')+(x.bw?' BW':' @'+r1(odyKg(e))+' kg')+(e.sets.some(z=>z.t==='D')?' +drop':'')+(e.ss?' (superset with '+e.ss+')':'')}).join('; '));
   else if(s&&s.type==='cardio'&&s.run)L.push('Session on '+iso(day)+': '+s.title+' · '+s.run.mins+' min · '+s.run.hr);else L.push('Session on '+iso(day)+': '+(s?s.title:'rest'));
+  {const r=(logs[iso(t)]||{}).readiness;if(r&&r.verdict){const g=gFlags(r,iso(t)).map(x=>x[1]),own=['go','trim','recover'].includes(r.override);
+    L.push('Check-in today: '+r.verdict+(own?' (his own call; the numbers said '+(r.autoVerdict||'go')+')':'')+(g.length?' · flags: '+g.join(', '):'')+' · '+['hrv','restingHR','sleepScore','bodyBattery'].filter(k=>typeof r[k]==='number').map(k=>k+' '+r[k]).join(', ')+((r.auto||[]).length?' (from Garmin)':''))}else L.push('Check-in today: none yet')}
   if(s&&s.express){try{const f=odyFull(day);odyRestorePhase();if(f&&f.exercises)L.push('Full session for that day (before Express): '+f.title+': '+f.exercises.map(e=>{const x=X[e.name]||{},n=odyW(e);return e.name+' '+n.length+'×'+(n[0]?n[0].treps:'')+(x.bw?' BW':' @'+r1(odyKg(e))+' kg')}).join('; ')+'. To go back to it use tweak_session op full (or change_workout op full mid-workout).')}catch(e){}}
   const tw=ODY.tw[iso(day)];if(tw&&tw.entries&&tw.entries.length)L.push('Already changed in the chat for that day: '+tw.entries.map(e=>e.summary).join(' | '));
   const lg=[];for(let i=1;i<=14;i++){const d=addDays(t,-i),k=iso(d),l=logs[k];if(!l||!l.status||l.status==='open')continue;
