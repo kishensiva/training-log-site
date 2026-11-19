@@ -385,6 +385,101 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   if ('serviceWorker' in navigator) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}) });
 })();
 
+</script><script>
+/* Phone notifications (19 Nov 2026, Kishen's call): today's plan at 6:45 am and the weekly recap on Sunday evening.
+   The database's own scheduler sends them (functions/push, private.morning_push / weekly_push). This part:
+   - asks once, with a small card on Today ("Turn on" / "Not now", which waits a week before asking again);
+   - keeps this phone's subscription in the app's own locked data (push/<id>; the endpoint is useless without the
+     server's private key);
+   - adds a Notifications card under Progress → Coach with a switch for each kind;
+   - opens Progress → Coach when a weekly recap is tapped (?open=prog).
+   Both apps (Eleanor's from 19 Nov: morning plan only, and the message never carries her coach's note). */
+(function () {
+  const APP = window.WEB_APP, VAPID = 'BHkoprFoefKte0t8KQWJ9t9q1FRBZboLuCiE8Dfi7Fd5NjpALfHlq5xsfOvIC0hXGND1IQRbsyQNYhNQUcyDlSM';
+  if (APP !== 'kishen' && APP !== 'eleanor') return;
+  const ELLE = APP === 'eleanor', NAME = ELLE ? 'Hyrox Log' : 'Training Log';
+  const OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const ls = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} } };
+  const KINDS = ELLE ? [['morning', 'Morning plan', 'Today’s session at 6:45 am']] : [['morning', 'Morning plan', 'Today’s session at 6:45 am'], ['weekly', 'Weekly recap', 'Sunday at 8:15 pm']];
+  const WHAT = ELLE ? 'Today’s session at 6:45 am, on your lock screen. Nothing else.' : 'Today’s session at 6:45 am, and your week’s recap on Sunday evening. Nothing else.';
+  const key = () => { const s = VAPID.replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(s + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0)) };
+  const db = () => window.claude.use('db');
+  async function sid(s) { const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s.endpoint))); return 'p' + Array.from(h.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('') }
+  async function sub() { if (!OK) return null; try { return await (await navigator.serviceWorker.ready).pushManager.getSubscription() } catch (e) { return null } }
+  let prefs = null;   /* this phone's switches, from push/<id> */
+  async function load() { const s = await sub(); if (!s || Notification.permission !== 'granted') { prefs = null; return null }
+    const d = await db(); if (!d) return null; const id = await sid(s);
+    try { const g = await d.doc('push/' + id).get(); prefs = g.exists ? g.data() : null } catch (e) {}
+    if (!prefs) { prefs = await save(s) } return prefs }
+  async function save(s) { const d = await db(); if (!d) throw new Error('offline'); const j = s.toJSON(), id = await sid(s);
+    const v = { endpoint: j.endpoint, keys: j.keys, on: true, morning: true, weekly: true, ua: navigator.userAgent.slice(0, 120), at: new Date().toISOString() };
+    await d.doc('push/' + id).set(v); return v }
+  async function turnOn() {
+    const p = await Notification.requestPermission(); if (p !== 'granted') return false;
+    const r = await navigator.serviceWorker.ready; let s = await r.pushManager.getSubscription();
+    if (!s) s = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key() });
+    prefs = await save(s); return true }
+  async function setKind(k, on) { const s = await sub(); if (!s) return; const d = await db(); await d.doc('push/' + await sid(s)).update({ [k]: on }); prefs = Object.assign({}, prefs, { [k]: on }) }
+  const tell = t => { try { toast(t) } catch (e) {} };
+
+  const css = `.npush{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:58;max-width:520px;margin:0 auto;background:var(--card);color:var(--fg);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 18px 40px -14px rgba(0,0,0,.55),0 0 0 1px var(--line);animation:npin .38s cubic-bezier(.23,1,.32,1) both}
+.npush.out{animation:npout .2s ease-in both}
+.npush .t{display:flex;gap:12px;align-items:flex-start}.npush .ic{width:40px;height:40px;border-radius:12px;background:var(--soft);display:grid;place-items:center;font-size:19px;flex:none}
+.npush b{display:block;font-size:16px;line-height:1.3}.npush p{margin:2px 0 0;font-size:14px;line-height:1.4;color:var(--muted);text-wrap:pretty}
+.npush .r{display:flex;gap:8px}.npush button{flex:1;min-height:46px;border-radius:999px;font:600 15px var(--body,inherit);border:0;background:var(--soft);color:var(--fg);text-transform:none;letter-spacing:0;box-shadow:none;transition:transform .12s ease-out}
+.npush button:active{transform:scale(.97)}.npush button.go{background:var(--fg);color:var(--bg)}
+.nprow{display:flex;align-items:center;gap:12px;min-height:56px;border-top:1px solid var(--line)}.nprow:first-of-type{border-top:0}
+.nprow .tx{flex:1;min-width:0;font-size:15px}.nprow small{display:block;color:var(--muted);font-size:13px}
+.npsw{appearance:none;-webkit-appearance:none;width:48px;height:28px;border-radius:999px;background:var(--line);position:relative;flex:none;margin:0;cursor:pointer;transition:background-color .2s ease}
+.npsw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.23,1,.32,1)}
+.npsw:checked{background:var(--accent)}.npsw:checked::after{transform:translateX(20px)}
+.nprow:focus-within{outline:none}.npsw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#npcard .msg{margin:0}#npcard .npgo{margin-top:4px;min-height:46px;border-radius:999px;border:0;background:var(--fg);color:var(--bg);font:600 15px var(--body,inherit);text-transform:none;letter-spacing:0}
+@keyframes npin{from{opacity:0;transform:translateY(16px)}}@keyframes npout{to{opacity:0;transform:translateY(10px)}}
+@media (prefers-reduced-motion:reduce){.npush,.npush.out{animation:none}.npsw,.npsw::after{transition:none}}`;
+  const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+
+  /* the one-time offer on Today */
+  function offer() {
+    if (!OK || Notification.permission !== 'default' || document.querySelector('.npush')) return;
+    if (Date.now() - (+ls.get('npLater') || 0) < 7 * 864e5) return;
+    if ((typeof view !== 'undefined' && view !== 'today') || document.querySelector('.uxsh.on,.stvp,#wsg') || (typeof mode !== 'undefined' && mode === 'live')) { setTimeout(offer, 8000); return }
+    const c = document.createElement('div'); c.className = 'npush'; c.setAttribute('role', 'dialog'); c.setAttribute('aria-label', 'Notifications');
+    c.innerHTML = '<div class="t"><span class="ic" aria-hidden="true">🔔</span><div><b>Your plan on your lock screen</b><p>' + WHAT + '</p></div></div><div class="r"><button type="button">Not now</button><button type="button" class="go">Turn on</button></div>';
+    const [later, go] = c.querySelectorAll('button');
+    const bye = () => { c.classList.add('out'); setTimeout(() => c.remove(), 210) };
+    later.onclick = () => { ls.set('npLater', String(Date.now())); bye() };
+    go.onclick = async () => { go.textContent = 'Turning on…'; go.disabled = true;
+      try { const on = await turnOn(); bye(); if (on) { tell('Notifications on. First one tomorrow at 6:45 am'); card() } else { ls.set('npLater', String(Date.now())); card() } }
+      catch (e) { go.disabled = false; go.textContent = 'Turn on'; tell('Couldn’t turn them on. Check your connection and try again') } };
+    document.body.appendChild(c);
+  }
+
+  /* the switches under Progress → Coach */
+  async function card() {
+    const host = document.getElementById('view-prog'); if (!host || !OK) return;
+    let c = document.getElementById('npcard');
+    if (!c) { c = document.createElement('section'); c.className = 'card'; c.id = 'npcard'; c.dataset.pg = 'coach'; c.setAttribute('aria-labelledby', 'nph'); host.appendChild(c) }
+    const perm = Notification.permission; if (perm === 'granted') await load();
+    let h = '<h2 id="nph">Notifications</h2>';
+    if (perm === 'denied') h += '<p class="msg">Notifications are blocked for this app. To allow them: ' + (ELLE ? 'iPhone Settings → Notifications → ' + NAME : 'your phone’s Settings → Apps → ' + NAME + ' → Notifications') + '.</p>';
+    else if (perm !== 'granted' || !prefs) h += '<p class="msg">' + WHAT + '</p><button type="button" class="npgo">Turn on notifications</button>';
+    else h += '<div>' + KINDS.map(([k, t, s]) => '<label class="nprow"><span class="tx">' + t + '<small>' + s + '</small></span><input type="checkbox" class="npsw" role="switch" data-np="' + k + '"' + (prefs[k] !== false ? ' checked' : '') + '></label>').join('') + '</div>';
+    c.innerHTML = h;
+    const g = c.querySelector('.npgo'); if (g) g.onclick = async () => { g.disabled = true; try { if (await turnOn()) tell('Notifications on') } catch (e) { tell('Couldn’t turn them on. Try again') } card() };
+    c.querySelectorAll('[data-np]').forEach(x => x.onchange = async () => { const k = x.dataset.np, on = x.checked;
+      try { await setKind(k, on); tell((k === 'morning' ? 'Morning plan ' : 'Weekly recap ') + (on ? 'on' : 'off')) } catch (e) { x.checked = !on; tell('Couldn’t save that. Try again') } });
+  }
+
+  db().then(d => { if (!d) return;
+    card();
+    /* a tapped weekly recap opens Progress → Coach */
+    try { const q = new URLSearchParams(location.search); if (q.get('open') === 'prog') { history.replaceState(null, '', location.pathname); setTimeout(() => { try { setPT('coach'); setView('prog') } catch (e) {} }, 600) } } catch (e) {}
+    setTimeout(offer, 5000);
+  });
+  window.NPUSH = { offer, card, turnOn };
+})();
+
 </script></head><body><title>Eleanor's Hyrox Log</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Big+Shoulders+Display:wght@600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
 <style>
@@ -2131,10 +2226,13 @@ function pickerHtml(e,s,x){
     return'<div class="picker kgp"><div class="kgrow"><button data-a="nudge" data-d="-1">−1</button><button data-a="nudge" data-d="-0.1">−0.1</button><input class="kgin num" data-kgin="1" type="number" inputmode="decimal" step="0.1" min="0" value="'+cv+'" aria-label="Weight in kg"><button data-a="nudge" data-d="0.1">+0.1</button><button data-a="nudge" data-d="1">+1</button></div><div class="kgq">'+vals.map(v=>'<button class="num'+(v===s.kg?' cur':'')+'" data-a="set" data-v="'+v+'">'+v+'</button>').join('')+'<button class="kgok" data-a="kgok">Done</button></div></div>'}
   return'<div class="picker">'+vals.map(v=>'<button class="num'+(v===s[picker.f]?' cur':'')+'" data-a="set" data-v="'+v+'">'+v+'</button>').join('')+'</div>';
 }
+/* a new personal best: above the old best e1RM; with PR_RULE (Kishen's app, 19 Nov) the first `base` sessions of a lift
+   only set its baseline and the gain must be at least `gain` (2.5%) so small noise isn't called a PR */
+function prBeats(name,before,e,b){const R=typeof window!=='undefined'&&window.PR_RULE;if(!R)return e>b+0.05;return history(name,before).length>=R.base&&e>=b*(1+R.gain)}
 function checkPR(ex,s){
   const b=bestE1(ex.name,cur.date),x=X[ex.name]||{};if(!b.e1||x.unit||x.bw||!s.kg)return;
   const e=e1rm(s.kg,s.reps);
-  if(e>b.e1+0.05)s.pr=1;else delete s.pr;
+  if(prBeats(ex.name,cur.date,e,b.e1))s.pr=1;else delete s.pr;
   /* the PR banner waits for the end of the exercise (every working set ticked), then shows the best one; never mid-exercise */
   const w=ex.sets.filter(z=>z.t!=='W');if(!w.length||!w.every(z=>z.done)||ex.prShown)return;
   const best=Math.max(0,...w.filter(z=>z.pr).map(z=>e1rm(z.kg,z.reps)));if(!best)return;ex.prShown=1;
@@ -2765,7 +2863,7 @@ async function finishSave(status,quick){
   if(cur.startedAt&&!fin0)cur.durationMin=Math.round((Date.parse(cur.finishedAt)-Date.parse(cur.startedAt))/60000);
   const st=setsDone();cur.volume=st.vol;cur.setsDone=st.d;
   cur.skippedEx=[];cur.cutEx=[];if(cur.type==='lift'&&status!=='skipped')(cur.exercises||[]).forEach(e=>{const w=e.sets.filter(s=>s.t!=='W'&&s.t!=='D'),d=w.filter(s=>s.done).length;if(!w.length)return;if(d===0)cur.skippedEx.push(e.name);else if(d<w.length)cur.cutEx.push(e.name+' '+d+'/'+w.length)});
-  cur.prs=[];(cur.exercises||[]).forEach(e=>{const b=bestE1(e.name,cur.date),x=X[e.name];if(!x||x.unit||x.bw)return;let top=0;e.sets.forEach(s=>{if(s.t!=='W'&&s.done)top=Math.max(top,e1rm(s.kg,s.reps))});if(b.e1&&top>b.e1+0.05)cur.prs.push({name:e.name,e1:Math.round(top)})});
+  cur.prs=[];(cur.exercises||[]).forEach(e=>{const b=bestE1(e.name,cur.date),x=X[e.name];if(!x||x.unit||x.bw)return;let top=0;e.sets.forEach(s=>{if(s.t!=='W'&&s.done)top=Math.max(top,e1rm(s.kg,s.reps))});if(b.e1&&prBeats(e.name,cur.date,top,b.e1))cur.prs.push({name:e.name,e1:Math.round(top)})});
   const g0=game();ANIM.date=cur.practice?null:cur.date;ANIM.xp0=xpPct(g0);ANIM.lv0=g0.lv;stopRest();await persist(true);if(!cur.practice)logs[cur.date]=bodyOf(cur);const g1=game();mode='summary';renderAll(true);
   if(!cur.practice&&db){const st={lv:g1.lv,title:g1.title,xp:g1.xp,streak:g1.streak,updatedAt:new Date().toISOString()};if(g1.lv>g0.lv)st.lastLevelUp={lv:g1.lv,title:g1.title,on:cur.date,reward:rewardFor(g1.lv)||null};
     db.doc('game/state').update(st).catch(()=>db.doc('game/state').set(st)).catch(()=>{})}
@@ -4962,6 +5060,410 @@ function akOrb(){if(!odyOn||!(cur&&mode==='live'&&cur.status==='in_progress'))re
   const was=JSON.stringify(AKT),now=JSON.stringify(m);Object.keys(AKT).forEach(k=>delete AKT[k]);Object.assign(AKT,m);if(was!==now)akRefresh()},()=>{})}catch(e){}})();
 (async()=>{try{const s=await claude.use('sample');if(!s)return;let lim=null;try{lim=await s.limits()}catch(e){}if(!lim||!lim.tools)return;odySample=s;odyOn=true;odyFab();try{if(cur)renderSession()}catch(e){}}catch(e){}})();
 window.AK={reloadRules:()=>{AK_RULES=null},open:()=>odyOpen(),send:t=>odySend(t),close:()=>odyClose(),state:ODY,ctx:()=>odyCtx(),tools:m=>odyTools(m||{})};
+}catch(e){console.error(e)}
+;
+try{
+/* UX upgrade stage 1 for Eleanor (19 Nov 2026), ported from Kishen's: the Today screen.
+   - A morning check-in sheet ("Morning, Elle. How do you feel?") before Start, once a day, using the app's own check-in.
+   - One big Start button; Normal/Gym, Express, Log as planned and Skip move into an "Other options" sheet.
+   - Skip gets a 6-second Undo bar; a few notices show only once.
+   Built on top of the existing screen: every option still runs the app's own buttons, so nothing about logging changes. */
+(function(){
+  const css=`.uxdim{position:fixed;inset:0;z-index:60;background:rgba(10,12,18,.42);opacity:0;pointer-events:none;transition:opacity .3s cubic-bezier(.23,1,.32,1)}
+.uxdim.on{opacity:1;pointer-events:auto}
+.uxsh{position:fixed;left:0;right:0;bottom:0;z-index:61;max-width:560px;margin:0 auto;box-sizing:border-box;background:var(--card);color:var(--fg);border-radius:26px 26px 0 0;padding:10px max(18px,env(safe-area-inset-right,0px)) calc(22px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:14px;box-shadow:0 -12px 40px rgba(0,0,0,.22);transform:translateY(105%);visibility:hidden;transition:transform .42s cubic-bezier(.23,1,.32,1)}
+.uxsh.on{transform:none;visibility:visible}
+.uxsh.off{transform:translateY(105%);transition:transform .26s cubic-bezier(.4,0,1,1),visibility 0s .26s;visibility:hidden}
+.uxsh:focus{outline:none}
+.uxsh .hd{width:40px;height:5px;border-radius:3px;background:var(--line);align-self:center}
+.uxsh .kk{font-size:14px;color:var(--muted);margin:2px 0 -10px}
+.uxsh h2{margin:0;font-size:26px;line-height:1.15;font-weight:700;text-wrap:balance;text-transform:none;letter-spacing:0}
+.uxg2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.uxg2 button{min-height:64px;border-radius:18px;font-size:18px;font-weight:600;background:var(--soft);color:var(--fg);border:1.5px solid transparent;box-shadow:none;text-transform:none;letter-spacing:0;transition:transform .12s ease-out,background-color .15s,border-color .15s}
+.uxg2 button.on,.uxg2 button[aria-pressed="true"]{background:var(--card);border-color:var(--fg)}
+.uxg2 button:active{transform:scale(.97)}
+.uxrow{display:flex;align-items:center;gap:12px;min-height:58px;width:100%;text-align:left;border:0;border-top:1px solid var(--line);background:none;color:var(--fg);font-size:17px;padding:0;box-shadow:none;text-transform:none;letter-spacing:0;border-radius:0}
+.uxrow:first-child{border-top:0}
+.uxrow .ic{width:38px;height:38px;border-radius:12px;background:var(--soft);display:grid;place-items:center;font-size:17px;flex:none}
+.uxrow .tx{flex:1;min-width:0}.uxrow small{display:block;color:var(--muted);font-size:13px}
+.uxlink{background:none;border:0;box-shadow:none;color:var(--muted);font-size:15px;text-decoration:underline;text-underline-offset:3px;min-height:40px;align-self:center;text-transform:none;letter-spacing:0}
+.uxseg{display:grid;grid-template-columns:1fr 1fr;background:var(--soft);border-radius:14px;padding:3px;gap:3px}
+.uxseg button{padding:10px 4px;border-radius:11px;font-weight:600;font-size:14.5px;color:var(--muted);background:transparent;border:0;box-shadow:none;min-height:44px;text-transform:none;letter-spacing:0;transition:background-color .2s,color .2s}
+.uxseg button[aria-pressed="true"]{background:var(--card);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.uxlab{font-size:13px;color:var(--muted);margin:0 0 -6px}
+#session .hero .uxunder{display:flex;justify-content:center;margin-top:-4px}
+#session .hero .uxunder button{background:none;border:0;box-shadow:none;color:rgba(255,255,255,.86);font-weight:600;min-height:44px;font-size:15px;padding:0 14px;text-transform:none;letter-spacing:0;width:auto;border-radius:999px;transition:color .15s ease,background-color .15s ease}
+#session .hero .uxunder button:active{background:rgba(255,255,255,.1);color:#fff}
+#session .hero.uxon .modepick,#session .hero.uxon #expressW,#session .hero.uxon #expressR,#session .hero.uxon .hlinks,#session .hero.uxon .kfullb{display:none!important}
+#session .hero .uxfeel{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;max-width:100%;white-space:nowrap;padding:0 6px 0 12px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;font-size:14px;font-weight:500;min-height:36px;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto;transition:transform .12s ease-out,background-color .15s ease}
+#session .hero .uxfeel:active{transform:scale(.97);background:rgba(255,255,255,.2)}
+#session .hero .uxfeel b{font-weight:700}
+#session .hero .uxfeel .c{padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.16);font-size:12.5px;font-weight:600}
+#session .hero .uxfeel i{width:8px;height:8px;border-radius:50%;background:#5ee39a;flex:none}
+#session .hero .metas .uxex{background:#fff;color:var(--hero,#7a1733);box-shadow:none}
+#session .hero.uxon button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+#session .hero.uxon #startW,#session .hero.uxon #startR{border:0;transition:transform .12s ease-out}
+#session .hero.uxon #startW:active,#session .hero.uxon #startR:active{transform:scale(.97)}
+#session .hero.uxfade>*{animation:uxin .32s cubic-bezier(.23,1,.32,1) both}
+#session .hero.uxfade>*:nth-child(2){animation-delay:.03s}#session .hero.uxfade>*:nth-child(3){animation-delay:.06s}#session .hero.uxfade>*:nth-child(n+4){animation-delay:.09s}
+@keyframes uxin{from{opacity:0;transform:translateY(6px)}}
+#session .hero .uxfeel i.w{background:#ffc35c}#session .hero .uxfeel i.r{background:#ff8b8b}
+.uxsnack{position:fixed;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:62;max-width:500px;margin:0 auto;background:#1d1f24;color:#fff;border-radius:16px;min-height:56px;padding:0 6px 0 16px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.3);animation:uxup .38s cubic-bezier(.23,1,.32,1) both}
+.uxsnack.out{animation:uxdown .22s ease-in both}
+.uxsnack span{flex:1;font-size:15px}.uxsnack button{color:#8fb3ff;font-weight:700;min-height:44px;padding:0 12px;background:none;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto}
+.uxsnack i{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#8fb3ff;transform-origin:left;animation:uxbar 6s linear both}
+@keyframes uxup{from{opacity:0;transform:translateY(18px)}}@keyframes uxdown{to{opacity:0;transform:translateY(14px)}}@keyframes uxbar{to{transform:scaleX(0)}}
+/* header: the same on every day (19 Nov, his call). Row 1: plan line + Today pill (when away from today); row 2: date + ‹ ›.
+   Row 1 keeps its height with or without the pill, so the date never moves. */
+.top{display:grid!important;grid-template-columns:minmax(0,1fr) 40px 40px;grid-template-areas:"eb tb tb" "dt pv nx";column-gap:6px;row-gap:0;align-items:center}
+.top .t{display:contents}
+.top #wklabel{grid-area:eb;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:32px;min-height:32px;margin:0}
+.top #datelabel{grid-area:dt;min-width:0;margin:0}
+.top #prev{grid-area:pv}.top #next{grid-area:nx}
+.top .kback{grid-area:tb;justify-self:end;height:30px!important;min-height:30px!important;padding:0 11px!important;font-size:12.5px!important}
+@media (prefers-reduced-motion:reduce){.uxsh,.uxdim{transition:none}.uxsnack,.uxsnack i,#session .hero.uxfade>*{animation:none}}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const FEEL={good:['','Good','train as planned'],meh:['w','Meh','warm up, then decide'],tired:['w','Tired','Express is the smart call'],wrecked:['r','Wrecked','recovery day instead']};
+  const $q=s=>document.querySelector(s);
+  const dim=document.createElement('div');dim.className='uxdim';document.body.appendChild(dim);
+  function mk(id,label){const s=document.createElement('div');s.className='uxsh';s.id=id;s.tabIndex=-1;s.setAttribute('role','dialog');s.setAttribute('aria-modal','true');s.setAttribute('aria-label',label);document.body.appendChild(s);return s}
+  const CI=mk('uxCheck','Morning check-in'),OP=mk('uxOpts','Other options');
+  let openSh=null,back=null,kb=false;addEventListener('keydown',()=>{kb=true},true);addEventListener('pointerdown',()=>{kb=false},true);
+  function sheet(el,on){if(on){if(openSh&&openSh!==el)sheet(openSh,false);back=document.activeElement;openSh=el;el.classList.remove('off');void el.offsetWidth;el.classList.add('on');dim.classList.add('on');setTimeout(()=>{try{el.focus({preventScroll:true})}catch(e){}},60)}
+    else{el.classList.remove('on');el.classList.add('off');dim.classList.remove('on');if(openSh===el)openSh=null;try{if(kb&&back&&back.focus)back.focus({preventScroll:true});else if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur()}catch(e){}}}
+  dim.onclick=()=>{if(openSh)sheet(openSh,false)};
+  addEventListener('keydown',e=>{if(e.key==='Escape'&&openSh)sheet(openSh,false)});
+  const store={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+  const todayK=()=>iso(today);
+  const isToday=()=>cur&&!cur.practice&&cur.date===todayK()&&mode==='preview';
+  const startBtn=()=>$q('#session .hero #startW')||$q('#session .hero #startR');
+  const hello=()=>{const h=new Date().getHours();return h<12?'Morning':h<18?'Afternoon':'Evening'};
+  function feelNow(){return typeof ready==='object'&&ready?ready.quick:null}
+  const ciDone=()=>!!(window.__uxNoCheckin||store.get('uxCI:'+todayK()));
+
+  /* check-in sheet */
+  function renderCI(){const f=feelNow();
+    CI.innerHTML='<div class="hd"></div><p class="kk">'+esc((cur&&cur.title)||'Today')+' today</p><h2>'+hello()+', Elle.<br>How do you feel?</h2>'+
+      '<div class="uxg2">'+Object.keys(FEEL).map(k=>'<button type="button" data-uxf="'+k+'" aria-pressed="'+(f===k)+'">'+FEEL[k][1]+'</button>').join('')+'</div>'+
+      '<div><button type="button" class="uxrow" data-uxg="1"><span class="ic" aria-hidden="true">⌚</span><span class="tx">Add Garmin numbers<small>Readiness · HRV · resting HR</small></span><span aria-hidden="true">›</span></button></div>'+
+      '<button type="button" class="uxlink" data-uxl="1">Not now</button>'}
+  CI.addEventListener('click',e=>{const b=e.target.closest('[data-uxf]');
+    if(b){const v=b.dataset.uxf;b.classList.add('on');try{navigator.vibrate&&navigator.vibrate(10)}catch(_){}
+      setTimeout(()=>{sheet(CI,false);if(feelNow()!==v){const c=$q('#q-quick button[data-v="'+v+'"]');if(c)c.click()}store.set('uxCI:'+todayK(),'1');try{renderSession()}catch(_){}},170);return}
+    if(e.target.closest('[data-uxg]')){sheet(CI,false);store.set('uxCI:'+todayK(),'1');setTimeout(()=>{const g=$('gnudge');if(g&&!g.hidden)g.click();else{const r=$('ready');r&&r.scrollIntoView({block:'start',behavior:'smooth'})}},260);return}
+    if(e.target.closest('[data-uxl]')){sheet(CI,false);store.set('uxCI:'+todayK(),'1')}});
+  function openCI(){renderCI();sheet(CI,true)}
+
+  /* other options sheet */
+  function renderOP(){const lift=!!$q('#session .hero #startW'),ex=$q('#session .hero #expressW')||$q('#session .hero #expressR'),gymOn=!!$q('#session [data-logmode="gym"][aria-pressed="true"]');
+    let h='<div class="hd"></div><h2 style="font-size:22px">Other options</h2><div>';
+    if($q('#session .hero .kfullb'))h+='<button type="button" class="uxrow" data-uxo="full"><span class="ic" aria-hidden="true">↺</span><span class="tx">Back to the full session<small>'+esc(((cur&&cur.title)||'').replace(/ · Express$/,''))+'</small></span></button>';
+    if(ex)h+='<button type="button" class="uxrow" data-uxo="express"><span class="ic" aria-hidden="true">⚡</span><span class="tx">'+esc(ex.textContent.replace(/^Tired\?\s*/,''))+'<small>Short on time or energy. Streak stays safe</small></span></button>';
+    h+='<button type="button" class="uxrow" data-uxo="feel"><span class="ic" aria-hidden="true">☺</span><span class="tx">'+(feelNow()?'Change how you feel':'How do you feel?')+'</span></button>';
+    if($q('#session .hero #quickW')||$q('#session .hero #logR'))h+='<button type="button" class="uxrow" data-uxo="log"><span class="ic" aria-hidden="true">✓</span><span class="tx">Already done? Log as planned</span></button>';
+    if($q('#session .hero #skipW')||$q('#session .hero #skipR0'))h+='<button type="button" class="uxrow" data-uxo="skip"><span class="ic" aria-hidden="true">⏭</span><span class="tx">Skip today</span></button>';
+    h+='</div>';
+    if(lift&&$q('#session [data-logmode]'))h+='<p class="uxlab">Log your sets</p><div class="uxseg"><button type="button" data-uxm="list" aria-pressed="'+!gymOn+'">Normal · all at once</button><button type="button" data-uxm="gym" aria-pressed="'+gymOn+'">Gym · one at a time</button></div>';
+    OP.innerHTML=h}
+  OP.addEventListener('click',e=>{const o=e.target.closest('[data-uxo]');
+    if(o){const a=o.dataset.uxo;sheet(OP,false);
+      if(a==='feel'){setTimeout(openCI,240);return}
+      const pick=s=>{const b=$q('#session .hero '+s);if(b)b.click();return!!b};
+      if(a==='express'){pick('#expressW')||pick('#expressR');return}
+      if(a==='full'){pick('.kfullb');return}
+      if(a==='log'){pick('#quickW')||pick('#logR');return}
+      if(a==='skip'){const t=(cur&&cur.title||'Today').replace(/ · Express$/,'');if(pick('#skipW')||pick('#skipR0'))setTimeout(()=>snack(t+' skipped',()=>{const u=$('editW');if(u&&/Undo skip/.test(u.textContent))u.click()}),250);return}
+      return}
+    const m=e.target.closest('[data-uxm]');if(m){const b=$q('#session [data-logmode="'+m.dataset.uxm+'"]');if(b&&b.getAttribute('aria-pressed')!=='true')b.click();setTimeout(()=>{renderOP()},60)}});
+
+  /* undo bar */
+  let snT=null;
+  function snack(text,onUndo){document.querySelectorAll('.uxsnack').forEach(x=>x.remove());clearTimeout(snT);
+    const d=document.createElement('div');d.className='uxsnack';d.setAttribute('role','status');d.innerHTML='<span></span><button type="button">Undo</button><i></i>';d.querySelector('span').textContent=text;document.body.appendChild(d);
+    const close=()=>{d.classList.add('out');setTimeout(()=>d.remove(),230)};d.querySelector('button').onclick=()=>{clearTimeout(snT);close();onUndo&&onUndo()};snT=setTimeout(close,6000)}
+
+  /* notices that only need saying once */
+  const ONCE=[/^Screen stays on/];
+  try{const t0=toast;toast=function(t){const i=ONCE.findIndex(r=>r.test(String(t)));if(i>=0){if(store.get('uxOnce:'+i))return;store.set('uxOnce:'+i,'1')}return t0.apply(this,arguments)}}catch(e){}
+
+  /* the hero: one Start, the mode line and Other options under it, the feel pill above the plan */
+  function hero(){if(!isToday())return;const s=startBtn();if(!s)return;const h=s.closest('.hero');if(!h||h.classList.contains('uxon'))return;h.classList.add('uxon');
+    /* title: "4×4 intervals + core", with Express as a chip rather than a third line of the heading */
+    const ht=h.querySelector('.ht'),ms=h.querySelector('.metas');
+    if(ht&&/ · Express$/.test(ht.textContent)){const b=ht.textContent.replace(/ · Express$/,'');ht.textContent=b;try{ht.style.setProperty('--fit',fitW(b))}catch(e){}
+      if(ms&&!ms.querySelector('.uxex')){const c=document.createElement('span');c.className='uxex';c.textContent='Express';ms.prepend(c)}}
+    /* the line under the chips ends like a sentence */
+    const inf=ms&&ms.nextElementSibling;if(inf&&inf.tagName==='DIV'&&!inf.children.length){const t=inf.textContent.trim();if(t&&!/[.!?…)]$/.test(t))inf.textContent=t+'.'}
+    /* "80 kg" never splits across lines */
+    h.querySelectorAll('.plantg b,.metas span').forEach(n=>{if(!n.children.length)n.textContent=n.textContent.replace(/(\d) (kg|min|bpm|s)\b/g,'$1\u00a0$2')});
+    const u=document.createElement('div');u.className='uxunder';u.innerHTML='<button type="button" data-uxopen="1">Other options</button>';
+    (h.querySelector('.kfullb')||s).insertAdjacentElement('afterend',u);u.querySelector('[data-uxopen]').onclick=()=>{renderOP();sheet(OP,true)};
+    const f=feelNow();if(f&&FEEL[f]){const p=document.createElement('button');p.type='button';p.className='uxfeel';p.setAttribute('aria-label','Feeling '+FEEL[f][1].toLowerCase()+'. Change');p.innerHTML='<i class="'+FEEL[f][0]+'"></i><span>Feeling <b>'+FEEL[f][1].toLowerCase()+'</b></span><span class="c" aria-hidden="true">Change</span>';p.onclick=openCI;
+      const anchor=h.querySelector('.plantg')||s;anchor.insertAdjacentElement('beforebegin',p)}
+    /* when the day itself changes (Express on or off, a new feel), the card settles in instead of snapping */
+    const sig=(cur.date||'')+'|'+(cur.title||'')+'|'+(f||'');if(hero.sig&&hero.sig!==sig){h.classList.add('uxfade');setTimeout(()=>h.classList.remove('uxfade'),500)}hero.sig=sig;
+    /* Start asks how he feels first, once a day */
+    s.addEventListener('click',e=>{if(feelNow()||ciDone())return;e.preventDefault();e.stopImmediatePropagation();openCI()},true)}
+  function auto(){if(!isToday()||feelNow()||ciDone()||openSh)return;if(typeof view!=='undefined'&&view!=='today')return;const s=startBtn();if(!s)return;
+    clearTimeout(auto._t);auto._t=setTimeout(()=>{if(!feelNow()&&!ciDone()&&isToday()&&!openSh&&startBtn())openCI()},700)}
+  const rs=renderSession;renderSession=function(){const r=rs.apply(this,arguments);try{hero();auto()}catch(e){}return r};
+  window.UX1={openCI,openOP:()=>{renderOP();sheet(OP,true)},snack};
+  try{if(cur)renderSession()}catch(e){}
+})();
+}catch(e){console.error(e)}
+;
+try{
+/* UX upgrade stage 2 for Eleanor (19 Nov 2026), ported from Kishen's: the workout moves. Her app has only the list view, so the gym-screen parts below simply never run.
+   Gym (one-at-a-time) screen and the Normal list view; only motion: nothing about logging changes.
+   - Start: the workout settles in from the Today card.
+   - Set done → rest: the ring grows in, the logged set drops into place, haptic tap.
+   - Rest over → next set: the set screen slides in from the right.
+   - Next exercise: a longer slide, the name first, then the rest staggered.
+   - Last 5 s of rest: the Up next card lifts and counts down.
+   - Set done with a box empty: the boxes shake (the app's own hint still shows).
+   - Both boxes filled: the Set done button glows once.
+   Normal view (his question, 19 Nov): the list settles in on Start, the rest bar slides up, a finished exercise
+   folds into its done row and the next one opens with a slide, a tick with an empty box shakes that row.
+   Reduced motion: none of it, just the screens. */
+(function(){
+  const css=`#session #gym.ux2-start{animation:ux2start .42s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-start>.gtop{animation:ux2down .42s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-set>:not(.gtop):not(.gov){animation:ux2side .34s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-ex>:not(.gtop):not(.gov){animation:ux2far .44s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-ex>:nth-child(n+3):not(.gov){animation-delay:.05s}#session #gym.ux2-ex>:nth-child(n+5):not(.gov){animation-delay:.1s}
+#session #gym.ux2-rest .glog{animation:ux2drop .34s cubic-bezier(.23,1,.32,1) both}
+#session #gym.ux2-rest .gring{animation:ux2ring .5s cubic-bezier(.23,1,.32,1) .04s both}
+#session #gym.ux2-rest .grb,#session #gym.ux2-rest .gup{animation:ux2up .4s cubic-bezier(.23,1,.32,1) .12s both}
+#session #gym .gup{position:relative;transition:transform .35s cubic-bezier(.23,1,.32,1),box-shadow .35s cubic-bezier(.23,1,.32,1)}
+#session #gym .gup .ux2n{display:none;position:absolute;right:12px;top:calc(50% - 20px);width:40px;height:40px;border-radius:50%;place-items:center;font-weight:800;font-size:17px;font-variant-numeric:tabular-nums;color:var(--accent);background:conic-gradient(var(--accent) calc(var(--p,0)*1turn),var(--soft) 0)}
+#session #gym .gup .ux2n::before{content:"";position:absolute;inset:4px;border-radius:50%;background:var(--card)}
+#session #gym .gup .ux2n b{position:relative}
+#session #gym .gup.soon{transform:translateY(-4px);box-shadow:0 14px 30px -14px rgba(0,0,0,.45),inset 0 0 0 1.5px var(--accent)}
+#session #gym .gup.soon .ux2n{display:grid;animation:ux2pop .3s cubic-bezier(.23,1,.32,1) both}
+#session #gym .gin.ux2-shake{animation:ux2shake .32s ease-in-out}
+#session #gym .ggo{transition:transform .12s ease-out}
+#session #gym .ggo:active{transform:scale(.97)}
+#session #gym .ggo.ux2-glow{animation:ux2glow .9s ease-out 1}
+#session #gym .gdots .ok.ux2-pop{animation:ux2dot .36s cubic-bezier(.23,1,.32,1)}
+#session.ux2-lstart .exc,#session.ux2-lstart .exmini{animation:ux2up .4s cubic-bezier(.23,1,.32,1) both}
+#session.ux2-lstart .exmini:nth-of-type(n+2){animation-delay:.04s}#session.ux2-lstart .exmini:nth-of-type(n+3){animation-delay:.08s}#session.ux2-lstart .exmini:nth-of-type(n+4){animation-delay:.12s}
+#session .exmini.ux2-fold{animation:ux2fold .38s cubic-bezier(.23,1,.32,1) both}
+#session .exc.ux2-open{animation:ux2side .4s cubic-bezier(.23,1,.32,1) .08s both}
+#session .sr.ux2-shake{animation:ux2shake .32s ease-in-out}
+#restbar.ux2-rb{animation:ux2rb .38s cubic-bezier(.23,1,.32,1) both}
+@keyframes ux2fold{from{opacity:.4;transform:scaleY(1.6);transform-origin:top}}
+@keyframes ux2rb{from{transform:translateY(100%)}}
+@keyframes ux2start{from{opacity:0;transform:scale(.96) translateY(10px)}}
+@keyframes ux2down{from{opacity:0;transform:translateY(-10px)}}
+@keyframes ux2side{from{opacity:0;transform:translateX(26px)}}
+@keyframes ux2far{from{opacity:0;transform:translateX(56px)}}
+@keyframes ux2drop{from{opacity:0;transform:translateY(-12px)}}
+@keyframes ux2ring{from{opacity:0;transform:scale(.88)}}
+@keyframes ux2up{from{opacity:0;transform:translateY(12px)}}
+@keyframes ux2pop{from{opacity:0;transform:scale(.7)}}
+@keyframes ux2dot{40%{transform:scale(1.18)}}
+@keyframes ux2shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@keyframes ux2glow{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--st-go,#1ea381) 60%,transparent)}100%{box-shadow:0 0 0 16px transparent}}
+@media (prefers-reduced-motion:reduce){#session #gym *,#session #gym,#session .exc,#session .exmini,#session .sr,#restbar{animation:none!important;transition:none!important}}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const RMq=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){return false}};
+  const buzz=p=>{try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}};
+  /* what the gym screen showed: which exercise, resting or not, how many sets ticked */
+  function look(){const g=document.getElementById('gym');if(!g||typeof cur!=='object'||!cur)return{mode:typeof mode!=='undefined'?mode:null,gym:false};
+    const L=cur.exercises||[],e=L[GYM.cur];return{mode,gym:true,ex:GYM.cur,obj:GYM.obj,rest:!!document.getElementById('gymrest'),done:e?e.sets.filter(z=>z.done).length:0}}
+  function play(kind){const g=document.getElementById('gym');if(!g||RMq())return;['ux2-start','ux2-set','ux2-ex','ux2-rest'].forEach(c=>g.classList.remove(c));void g.offsetWidth;g.classList.add('ux2-'+kind);
+    clearTimeout(play.t);play.t=setTimeout(()=>{const h=document.getElementById('gym');if(h){h.classList.remove('ux2-'+kind);if(!h.className)h.removeAttribute('class')}},700)}
+  /* Normal view: which exercises are folded as done */
+  function lookL(){const el=document.getElementById('session');if(!el||document.getElementById('gym')||typeof mode==='undefined'||mode!=='live')return null;
+    if(!el.querySelector('.exc,.exmini'))return null;return{done:new Set([...el.querySelectorAll('.exmini.done .exn')].map(n=>n.textContent))}}
+  function lplay(a,b){if(RMq())return;const el=document.getElementById('session');
+    if(!a){el.classList.remove('ux2-lstart');void el.offsetWidth;el.classList.add('ux2-lstart');clearTimeout(lplay.t);lplay.t=setTimeout(()=>{el.classList.remove('ux2-lstart');if(!el.className)el.removeAttribute('class')},700);return}
+    const fresh=[...el.querySelectorAll('.exmini.done')].filter(m=>{const n=m.querySelector('.exn');return n&&!a.done.has(n.textContent)});
+    if(fresh.length){fresh.forEach(m=>m.classList.add('ux2-fold'));const o=el.querySelector('.exc.focus');if(o)o.classList.add('ux2-open')}}
+  const rs=renderSession;renderSession=function(){const a=look(),al=lookL();
+    const r=rs.apply(this,arguments);
+    try{const bl=lookL();if(bl)lplay(al,bl)}catch(e){}
+    try{const b=look();if(b.gym){
+      if(!a.gym)play('start');
+      else if(a.gym&&b.obj!==a.obj)play('ex');
+      else if(a.gym&&!a.rest&&b.rest)play('rest');
+      else if(a.gym&&a.rest&&!b.rest)play('set');   /* the app itself says "Rest over · next set" */
+      else if(a.gym&&b.done>a.done)play('set');
+      if(b.done>a.done){const d=document.querySelectorAll('#gym .gdots .ok');const last=d[d.length-1];if(last&&!RMq())last.classList.add('ux2-pop')}
+      upnext()}}catch(e){}
+    return r};
+  /* the Up next card lifts and counts down in the last 5 s of rest */
+  function upnext(){const u=document.querySelector('#gym .gup');if(!u||typeof rest!=='object'||!rest.on)return;
+    if(!u.querySelector('.ux2n')){const n=document.createElement('span');n.className='ux2n';n.setAttribute('aria-hidden','true');n.innerHTML='<b></b>';u.appendChild(n)}
+    const left=(rest.end-Date.now())/1000,soon=left<=5&&left>0;u.classList.toggle('soon',soon);
+    if(soon){const n=u.querySelector('.ux2n');n.style.setProperty('--p',String(Math.max(0,Math.min(1,left/5))));n.querySelector('b').textContent=String(Math.ceil(left))}}
+  setInterval(()=>{if(document.getElementById('gymrest'))upnext()},200);
+  {const rb=document.getElementById('restbar');if(rb&&window.MutationObserver){let was=rb.hidden;new MutationObserver(()=>{if(was&&!rb.hidden&&!RMq()){rb.classList.remove('ux2-rb');void rb.offsetWidth;rb.classList.add('ux2-rb')}was=rb.hidden}).observe(rb,{attributes:true,attributeFilter:['hidden']})}}
+  /* Normal view: a tick with an empty box shakes that row */
+  document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#session .sr button.ok[data-a="ok"]');if(!b||document.getElementById('gym'))return;const row=b.closest('.sr');if(!row||row.classList.contains('done'))return;
+    const empty=[...row.querySelectorAll('input.cell')].some(i=>!String(i.value).trim());
+    if(empty&&!RMq()){setTimeout(()=>{const r2=document.querySelector('#session .sr button.ok[data-e="'+b.dataset.e+'"][data-s="'+b.dataset.s+'"]');const rw=r2&&r2.closest('.sr');if(!rw)return;rw.classList.remove('ux2-shake');void rw.offsetWidth;rw.classList.add('ux2-shake')},0);buzz([20,40,20])}},true);
+  /* Set done with an empty box: shake the boxes (the app still says which one) */
+  document.addEventListener('click',e=>{const b=e.target.closest&&e.target.closest('#gym .ggo[data-a="ok"]');if(!b)return;const gi=document.querySelector('#gym .gin');if(!gi)return;
+    const empty=[...gi.querySelectorAll('input')].some(i=>!String(i.value).trim());
+    if(empty&&!RMq()){setTimeout(()=>{const g2=document.querySelector('#gym .gin');if(!g2)return;g2.classList.remove('ux2-shake');void g2.offsetWidth;g2.classList.add('ux2-shake')},0);buzz([20,40,20])}},true);
+  /* both boxes filled: the Set done button glows once */
+  document.addEventListener('focusout',e=>{const t=e.target;if(!t||!t.closest||!t.closest('#gym .gin'))return;
+    setTimeout(()=>{const gi=document.querySelector('#gym .gin'),go=document.querySelector('#gym .ggo[data-a="ok"]');if(!gi||!go||RMq())return;
+      const all=[...gi.querySelectorAll('input')].every(i=>String(i.value).trim());if(all&&!gi.contains(document.activeElement)){go.classList.remove('ux2-glow');void go.offsetWidth;go.classList.add('ux2-glow')}},60)},true);
+  window.UX2={play};
+})();
+}catch(e){console.error(e)}
+;
+try{
+/* UX upgrade stage 3 for Eleanor (19 Nov 2026), ported from Kishen's: the finish.
+   The "DONE" celebration already counts up time, kg and sets, PRs, the ghost and XP. This adds what the demo had
+   on top of it:
+   - "Best set today" when there's no personal best to show (biggest gain on last time, else the heaviest set);
+   - "Next": tomorrow's session from the plan, so he knows what's coming;
+   - a 6-second Undo bar ("Lower A finished · Undo") that reopens the workout exactly where it was;
+   - on today's summary, a quiet "Finished by mistake? Reopen" link for later. */
+(function(){
+  const css=`.winfx .ux3c{display:flex;flex-direction:column;gap:8px;margin:2px 0 0;animation:ux3in .46s cubic-bezier(.23,1,.32,1) calc(var(--tT,1s) + .9s) both}
+.winfx .ux3c div{background:rgba(255,255,255,.1);border-radius:18px;padding:12px 14px}
+.winfx .ux3c small{display:block;font-size:12px;font-weight:700;letter-spacing:.06em;opacity:.75;text-transform:uppercase}
+.winfx .ux3c b{display:block;font-size:17px;font-weight:700;line-height:1.3;margin-top:2px;font-variant-numeric:tabular-nums;text-wrap:balance}
+.ux3snack{position:fixed;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:120;max-width:500px;margin:0 auto;background:#1d1f24;color:#fff;border-radius:16px;min-height:56px;padding:0 6px 0 16px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.35);animation:ux3up .38s cubic-bezier(.23,1,.32,1) both}
+.ux3snack.top{top:calc(12px + env(safe-area-inset-top,0px));bottom:auto;animation-name:ux3dn}
+.ux3snack.out{animation:ux3down .22s ease-in both}
+.ux3snack span{flex:1;font-size:15px}.ux3snack button{color:#8fb3ff;font-weight:700;min-height:44px;padding:0 12px;background:none;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto;font-size:15px}
+.ux3snack i{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#8fb3ff;transform-origin:left;animation:ux3bar 6s linear both}
+#session .ux3re{display:flex;justify-content:center;margin:4px 0 0}
+#session .ux3re button{background:none;border:0;box-shadow:none;color:var(--muted);font-size:14px;min-height:44px;padding:0 12px;text-decoration:underline;text-underline-offset:3px;text-transform:none;letter-spacing:0;width:auto}
+@keyframes ux3in{from{opacity:0;transform:translateY(14px)}}@keyframes ux3up{from{opacity:0;transform:translateY(18px)}}@keyframes ux3dn{from{opacity:0;transform:translateY(-18px)}}@keyframes ux3down{to{opacity:0;transform:translateY(14px)}}@keyframes ux3bar{to{transform:scaleX(0)}}
+@media (prefers-reduced-motion:reduce){.winfx .ux3c,.ux3snack,.ux3snack i{animation:none}}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const base=()=>String((cur&&cur.title)||'Workout').replace(/ · Express$/,'');
+  const todayIso=()=>{try{return iso(today)}catch(e){return''}};
+
+  function bestSet(){if(!cur||cur.type!=='lift')return'';let best=null;
+    (cur.exercises||[]).forEach(e=>{const x=X[e.name]||{};if(x.unit||x.bw)return;const h=(history(e.name,cur.date)[0]||{}).sets||[];const lastTop=h.filter(z=>z.t!=='W'&&z.done&&+z.kg).reduce((m,z)=>Math.max(m,+z.kg),0);
+      e.sets.forEach(z=>{if(z.t==='W'||!z.done||!(+z.kg>0))return;const gain=lastTop?+z.kg-lastTop:0,e1=e1rm(+z.kg,+z.reps||0);
+        if(!best||gain>best.gain||(gain===best.gain&&e1>best.e1))best={name:e.name,kg:+z.kg,reps:+z.reps||0,gain,e1}})});
+    if(!best)return'';return best.name+' '+r1(best.kg)+' kg × '+best.reps+(best.gain>0?' · up '+r1(best.gain)+' kg on last time':'')}
+  function nextUp(){try{const d=addDays(parse(cur.date),1),p=effPlan(d);if(!p)return'';
+    const when=iso(d)===iso(addDays(today,1))?'tomorrow':DN[d.getDay()];
+    if(p.type==='rest')return(p.title||'Rest day')+' · '+when;
+    const mins=p.type==='cardio'&&p.run&&p.run.mins?' · '+p.run.mins+' min':'';return(p.title||'Training')+mins+' · '+when}catch(e){return''}}
+
+  /* reopen: back to the workout as it was, saved and counted again only when he finishes */
+  async function reopen(){if(!cur||cur.practice||!['done','partial'].includes(cur.status))return;
+    const w=document.getElementById('winfx');if(w)w.remove();
+    cur.status='in_progress';delete cur.finishedAt;delete cur.durationMin;mode='live';
+    try{await persist(true)}catch(e){}try{logs[cur.date]=bodyOf(cur)}catch(e){}renderAll(true);try{window.scrollTo({top:0})}catch(e){}
+    try{const g=game();if(db)db.doc('game/state').update({lv:g.lv,title:g.title,xp:g.xp,streak:g.streak,updatedAt:new Date().toISOString()}).catch(()=>{})}catch(e){}
+    toast('Workout reopened. Finish it again when you’re done')}
+  let snT=null;
+  function snack(text){document.querySelectorAll('.ux3snack').forEach(x=>x.remove());clearTimeout(snT);
+    const d=document.createElement('div');d.className='ux3snack'+(document.getElementById('winfx')?' top':'');   /* at the top over the celebration, so its buttons stay free */
+    d.setAttribute('role','status');d.innerHTML='<span></span><button type="button">Undo</button><i></i>';d.querySelector('span').textContent=text;document.body.appendChild(d);
+    const close=()=>{d.classList.add('out');setTimeout(()=>d.remove(),230)};d.querySelector('button').onclick=()=>{clearTimeout(snT);close();reopen()};snT=setTimeout(close,6000)}
+
+  const w0=win;win=function(o){const r=w0.apply(this,arguments);
+    try{const w=document.getElementById('winfx'),f=w&&(w.querySelector('.wfoot')||w.querySelector('.wbtn'));   /* her celebration has its buttons straight in the card */
+      if(w&&f&&!o.practice){const best=o.kind==='lift'&&!(o.prs&&o.prs.length)&&!(o.fx&&o.fx.prs&&o.fx.prs.length)?bestSet():'',nx=nextUp();
+        if(best||nx){const c=document.createElement('div');c.className='ux3c';c.innerHTML=(best?'<div><small>Best set today</small><b></b></div>':'')+(nx?'<div><small>Next</small><b></b></div>':'');
+          const bs=c.querySelectorAll('b');let i=0;if(best)bs[i++].textContent=best;if(nx)bs[i].textContent=nx;f.parentNode.insertBefore(c,f)}
+        setTimeout(()=>snack(base()+' finished'),900)}}catch(e){}
+    return r};
+
+  /* today's summary: a quiet way back in, all day */
+  const rs=renderSession;renderSession=function(){const r=rs.apply(this,arguments);
+    try{const el=document.getElementById('session');if(el&&mode==='summary'&&cur&&!cur.practice&&['done','partial'].includes(cur.status)&&cur.date===todayIso()&&!el.querySelector('.ux3re')){
+      const d=document.createElement('div');d.className='ux3re';d.innerHTML='<button type="button">Finished by mistake? Reopen the workout</button>';d.querySelector('button').onclick=reopen;el.appendChild(d)}}catch(e){}
+    return r};
+  window.UX3={reopen,bestSet,nextUp};
+})();
+}catch(e){console.error(e)}
+;
+try{
+/* UX upgrade stage 4 for Eleanor (19 Nov 2026), a simpler set than Kishen's (his call: she has no Strava or HRV).
+   "Your numbers" at the top of Progress → Training:
+   - Week split: strength, runs and Hyrox sims done per week, last 4 weeks.
+   - Effort and weekly load: a one-tap 1–10 on the "How did it go?" screen; load = effort × minutes.
+   - Hitting your targets: working sets at the coach's weight with the target reps, per lift; plus real personal
+     bests (first 2 sessions of a lift = baseline, gains under 2.5% don't count; PR_RULE in core does the same for
+     the app's own PR stars).
+   - Followed the coach's call?: when the coach or her check-in said Express or recovery, did she?
+   Also: one-size "Switch back" buttons on Fresh exercises. Nothing here changes her plan. */
+(function(){
+  window.PR_RULE={gain:.025,base:2};
+  const css=`#ux4{display:flex;flex-direction:column;gap:12px}
+#ux4 .u4c{background:var(--card);border-radius:20px;padding:16px;box-shadow:inset 0 0 0 1px var(--line)}
+#ux4 h3{margin:0 0 2px;font-size:18px;line-height:1.3;text-transform:none;letter-spacing:0;font-weight:700}
+#ux4 .u4s{margin:0 0 10px;color:var(--muted);font-size:13.5px;line-height:1.4;text-wrap:pretty}
+#ux4 .u4big{font-size:30px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+#ux4 .u4big small{font-size:15px;font-weight:600;color:var(--muted);margin-left:4px}
+#ux4 .u4row{display:grid;grid-template-columns:64px 1fr auto;align-items:center;gap:10px;min-height:30px;font-size:14px;font-variant-numeric:tabular-nums}
+#ux4 .u4row span:first-child{color:var(--muted)}
+#ux4 .u4bar{height:10px;border-radius:5px;background:var(--soft);overflow:hidden;display:flex;gap:2px}
+#ux4 .u4bar i{display:block;height:100%;border-radius:5px}
+#ux4 .u4k{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin-top:8px}
+#ux4 .u4k i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:0}
+#ux4 .c1{background:var(--accent)}#ux4 .c2{background:#f2a33a}#ux4 .c3{background:#2fbf8f}
+#ux4 .u4lift{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;font-size:14px;padding:6px 0;border-top:1px solid var(--line)}
+#ux4 .u4lift:first-of-type{border-top:0}
+#ux4 .u4lift .u4bar{grid-column:1/-1;height:6px}
+#ux4 .u4e{color:var(--muted);font-size:13.5px}
+#rotcard .pl{align-items:center;min-height:56px}
+#rotcard .pl .l{flex:1}
+#rotcard .pl button[data-rot="back"]{flex:none;width:118px;min-height:40px!important;height:40px;padding:0 10px!important;border-radius:999px;white-space:nowrap;font-size:14px;font-weight:600;text-transform:none;letter-spacing:0;align-self:center}
+.fbrpe{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin:6px 0 2px}
+.fbrpe button{min-height:44px;padding:0;border-radius:10px;font-weight:700;font-variant-numeric:tabular-nums;text-transform:none;letter-spacing:0}
+.fbrpe button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.fbrpel{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const E=s=>esc(String(s)),day=d=>iso(d),mon=d=>addDays(d,-mdow(d)),L=()=>logs||{};
+  const did=l=>l&&['done','partial'].includes(l.status);
+  const minsOf=l=>+(l&&l.durationMin)||+(l&&l.run&&l.run.done&&l.run.done.mins)||0;
+  const kind=l=>{const t=String(l.title||'');if(/Hyrox|Race rehearsal|Test day/i.test(t))return'hy';if(l.type==='cardio'||/^Run\b/i.test(t))return'run';if(l.type==='lift')return'str';return''};
+
+  function split(){const t0=mon(today),rows=[];
+    for(let w=3;w>=0;w--){const a=addDays(t0,-7*w),c={str:0,run:0,hy:0};for(let i=0;i<7;i++){const l=L()[day(addDays(a,i))];if(did(l)){const k=kind(l);if(k)c[k]++}}rows.push({a,...c})}
+    return '<div class="u4c"><h3>Your week split</h3><p class="u4s">Sessions done per week: strength, runs and Hyrox sims.</p>'+
+      rows.map(r=>{const n=r.str+r.run+r.hy;return'<div class="u4row"><span>'+(r.a.getTime()===t0.getTime()?'This wk':short(r.a))+'</span><div class="u4bar" aria-hidden="true">'+(r.str?'<i class="c1" style="width:'+(r.str/7*100)+'%"></i>':'')+(r.run?'<i class="c3" style="width:'+(r.run/7*100)+'%"></i>':'')+(r.hy?'<i class="c2" style="width:'+(r.hy/7*100)+'%"></i>':'')+'</div><span>'+(n?r.str+' · '+r.run+' · '+r.hy:'none')+'</span></div>'}).join('')+
+      '<div class="u4k"><span><i class="c1"></i>Strength</span><span><i class="c3"></i>Runs</span><span><i class="c2"></i>Hyrox sims</span></div></div>'}
+  function load(){const t0=mon(today),wk=[];for(let w=3;w>=0;w--){const a=addDays(t0,-7*w);let s=0,c=0;for(let i=0;i<7;i++){const l=L()[day(addDays(a,i))];if(did(l)&&+l.rpe&&minsOf(l)){s+=+l.rpe*minsOf(l);c++}}wk.push({a,s,c})}
+    const cur0=wk[3],prev=wk.slice(0,3).filter(w=>w.c),avg=prev.length?prev.reduce((n,w)=>n+w.s,0)/prev.length:0,mx=Math.max(1,...wk.map(w=>w.s));
+    if(!wk.some(w=>w.c))return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s" style="margin:0">After each workout, tap how hard it was (1–10) on the "How did it go?" screen. Effort × minutes gives your weekly load, a simple way to spot a week that’s too big before race day.</p></div>';
+    return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s">Effort (1–10) × minutes, added up per week. A week more than about 30% above your recent average is worth an easier day.</p><div class="u4big">'+Math.round(cur0.s)+'<small>this week'+(avg?' · avg '+Math.round(avg):'')+'</small></div>'+
+      wk.map(w=>'<div class="u4row"><span>'+(w===cur0?'This wk':short(w.a))+'</span><div class="u4bar" aria-hidden="true"><i class="'+(avg&&w.s>avg*1.3?'c2':'c1')+'" style="width:'+(w.s/mx*100)+'%"></i></div><span>'+Math.round(w.s)+'</span></div>').join('')+'</div>'}
+  function lifts(){const from=day(addDays(today,-27)),M={};
+    Object.keys(L()).filter(k=>k>=from&&did(L()[k])&&L()[k].type==='lift').sort().forEach(k=>(L()[k].exercises||[]).forEach(e=>{const x=X[e.name]||{};if(x.unit||x.bw)return;
+      const w=(e.sets||[]).filter(z=>z.t==='N'&&z.done&&z.tkg!=null&&z.treps!=null);if(!w.length)return;const o=M[e.name]||(M[e.name]={n:0,h:0});
+      w.forEach(z=>{o.n++;if(+z.kg>=+z.tkg-0.01&&+z.reps>=+z.treps)o.h++})}));
+    const rows=Object.entries(M).filter(([,o])=>o.n>=3).sort((a,b)=>b[1].n-a[1].n).slice(0,6);
+    const prs=[];Object.keys(L()).filter(k=>k>=from&&did(L()[k])).sort().forEach(k=>((L()[k].prs)||[]).forEach(p=>{const h=history(p.name,k),b=bestE1(p.name,k);if(h.length>=2&&b.e1&&p.e1>=b.e1*1.025)prs.push({k,name:p.name,e1:p.e1,up:Math.round(p.e1-b.e1)})}));
+    return '<div class="u4c"><h3>Hitting your targets</h3><p class="u4s">Working sets at the coach’s weight with the target reps, last 4 weeks. Around 70–90% means the targets are set right.</p>'+
+      (rows.length?rows.map(([n,o])=>{const p=Math.round(o.h/o.n*100);return'<div class="u4lift"><span>'+E(n)+'</span><b class="num">'+p+'%<small style="color:var(--muted);font-weight:500"> · '+o.h+'/'+o.n+'</small></b><div class="u4bar" aria-hidden="true"><i class="'+(p>=70?'c3':'c2')+'" style="width:'+p+'%"></i></div></div>'}).join(''):'<p class="u4e">Needs a few more logged sessions.</p>')+
+      '<h3 style="margin-top:14px">Real personal bests</h3><p class="u4s">Gains of 2.5% or more on your estimated 1-rep max, after a lift’s first 2 sessions (those set the baseline).</p>'+
+      (prs.length?prs.slice(-5).reverse().map(p=>'<div class="u4row"><span>'+short(parse(p.k))+'</span><span>'+E(p.name)+'</span><b class="num">'+p.e1+' kg <small style="color:#2fbf8f">+'+p.up+'</small></b></div>').join(''):'<p class="u4e">None in the last 4 weeks that pass the filter.</p>')+'</div>'}
+  function call(){const from=day(addDays(today,-27)),c=Object.keys(L()).filter(k=>k>=from&&L()[k].call).map(k=>L()[k].call),n=c.length,ok=c.filter(x=>x.ok).length;
+    return '<div class="u4c"><h3>Followed the coach’s call?</h3><p class="u4s">When your coach or your check-in said Express or recovery, did you go with it? '+(n?'Last 4 weeks.':'Counting starts with your next workout.')+'</p>'+
+      (n?'<div class="u4big">'+ok+' of '+n+'</div>'+c.slice(-4).reverse().map(x=>'<div class="u4row" style="grid-template-columns:1fr auto"><span>'+E(x.said)+'</span><span>'+(x.ok?'✓ went with it':'did '+E(x.did))+'</span></div>').join(''):'')+'</div>'}
+
+  function render(){const host=document.getElementById('view-prog');if(!host||typeof view==='undefined'||view!=='prog')return;
+    let s=document.getElementById('ux4');if(!s){s=document.createElement('section');s.id='ux4';s.dataset.pg='train';s.setAttribute('aria-label','Your numbers');host.insertBefore(s,host.querySelector('section[data-pg="train"]')||null)}
+    let h='';[split,load,lifts,call].forEach(f=>{try{h+=f()}catch(e){console.error(e)}});s.innerHTML=h}
+  const rp=renderProgress;renderProgress=function(){const r=rp.apply(this,arguments);try{render()}catch(e){}return r};
+
+  const rf=renderFeedback;renderFeedback=function(){const r=rf.apply(this,arguments);try{const c=document.querySelector('#session .card');const n=c&&c.querySelector('#fnote');if(!n||c.querySelector('.fbrpe'))return r;
+    const d=document.createElement('div');d.innerHTML='<h2 style="margin-top:6px">How hard was it?</h2><div class="fbrpe" role="group" aria-label="Effort from 1 to 10">'+[1,2,3,4,5,6,7,8,9,10].map(v=>'<button type="button" class="chip" data-rpe="'+v+'" aria-pressed="'+(+cur.rpe===v)+'">'+v+'</button>').join('')+'</div><div class="fbrpel"><span>1 very easy</span><span>10 all-out</span></div>';
+    n.parentNode.insertBefore(d,n);d.addEventListener('click',e=>{const b=e.target.closest('[data-rpe]');if(!b)return;const v=+b.dataset.rpe;cur.rpe=+cur.rpe===v?undefined:v;d.querySelectorAll('[data-rpe]').forEach(x=>x.setAttribute('aria-pressed',String(+cur.rpe===+x.dataset.rpe)))})}catch(e){}return r};
+
+  const fs=finishSave;finishSave=function(status){try{if(cur&&!cur.practice&&cur.date&&!cur.call){const c=typeof coach==='object'&&coach&&coach.date===cur.date?coach:null,v=(cur.readiness||{}).verdict;
+      const saidEx=c&&/Express\s*$/.test(c.title||''),saidRest=c&&c.rest===true,saidRec=v==='recover';
+      if(saidEx||saidRest||saidRec){const did=status==='skipped'?'skipped':cur.type==='rest'||status==='recovery'?'recovery':cur.express?'Express':'the full session';
+        const said=saidRest?'Coach: rest day':saidRec?'Check-in: recovery day':'Coach: Express';
+        cur.call={said,did,ok:(saidRest||saidRec)?did==='recovery'||did==='skipped':did!=='the full session',on:cur.date}}}}catch(e){}
+    return fs.apply(this,arguments)};
+  window.UX4={render};
+})();
 }catch(e){console.error(e)}
 ;
 try{

@@ -393,13 +393,15 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
      server's private key);
    - adds a Notifications card under Progress → Coach with a switch for each kind;
    - opens Progress → Coach when a weekly recap is tapped (?open=prog).
-   Kishen's app only for now. */
+   Both apps (Eleanor's from 19 Nov: morning plan only, and the message never carries her coach's note). */
 (function () {
   const APP = window.WEB_APP, VAPID = 'BHkoprFoefKte0t8KQWJ9t9q1FRBZboLuCiE8Dfi7Fd5NjpALfHlq5xsfOvIC0hXGND1IQRbsyQNYhNQUcyDlSM';
-  if (APP !== 'kishen') return;
+  if (APP !== 'kishen' && APP !== 'eleanor') return;
+  const ELLE = APP === 'eleanor', NAME = ELLE ? 'Hyrox Log' : 'Training Log';
   const OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const ls = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} } };
-  const KINDS = [['morning', 'Morning plan', 'Today’s session at 6:45 am'], ['weekly', 'Weekly recap', 'Sunday at 8:15 pm']];
+  const KINDS = ELLE ? [['morning', 'Morning plan', 'Today’s session at 6:45 am']] : [['morning', 'Morning plan', 'Today’s session at 6:45 am'], ['weekly', 'Weekly recap', 'Sunday at 8:15 pm']];
+  const WHAT = ELLE ? 'Today’s session at 6:45 am, on your lock screen. Nothing else.' : 'Today’s session at 6:45 am, and your week’s recap on Sunday evening. Nothing else.';
   const key = () => { const s = VAPID.replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(s + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0)) };
   const db = () => window.claude.use('db');
   async function sid(s) { const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s.endpoint))); return 'p' + Array.from(h.slice(0, 8)).map(b => b.toString(16).padStart(2, '0')).join('') }
@@ -443,7 +445,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     if (Date.now() - (+ls.get('npLater') || 0) < 7 * 864e5) return;
     if ((typeof view !== 'undefined' && view !== 'today') || document.querySelector('.uxsh.on,.stvp,#wsg') || (typeof mode !== 'undefined' && mode === 'live')) { setTimeout(offer, 8000); return }
     const c = document.createElement('div'); c.className = 'npush'; c.setAttribute('role', 'dialog'); c.setAttribute('aria-label', 'Notifications');
-    c.innerHTML = '<div class="t"><span class="ic" aria-hidden="true">🔔</span><div><b>Your plan on your lock screen</b><p>Today’s session at 6:45 am, and your week’s recap on Sunday evening. Nothing else.</p></div></div><div class="r"><button type="button">Not now</button><button type="button" class="go">Turn on</button></div>';
+    c.innerHTML = '<div class="t"><span class="ic" aria-hidden="true">🔔</span><div><b>Your plan on your lock screen</b><p>' + WHAT + '</p></div></div><div class="r"><button type="button">Not now</button><button type="button" class="go">Turn on</button></div>';
     const [later, go] = c.querySelectorAll('button');
     const bye = () => { c.classList.add('out'); setTimeout(() => c.remove(), 210) };
     later.onclick = () => { ls.set('npLater', String(Date.now())); bye() };
@@ -460,8 +462,8 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     if (!c) { c = document.createElement('section'); c.className = 'card'; c.id = 'npcard'; c.dataset.pg = 'coach'; c.setAttribute('aria-labelledby', 'nph'); host.appendChild(c) }
     const perm = Notification.permission; if (perm === 'granted') await load();
     let h = '<h2 id="nph">Notifications</h2>';
-    if (perm === 'denied') h += '<p class="msg">Notifications are blocked for this app. To allow them: your phone’s Settings → Apps → Training Log → Notifications.</p>';
-    else if (perm !== 'granted' || !prefs) h += '<p class="msg">Today’s session at 6:45 am and your weekly recap on Sunday evening, on your lock screen.</p><button type="button" class="npgo">Turn on notifications</button>';
+    if (perm === 'denied') h += '<p class="msg">Notifications are blocked for this app. To allow them: ' + (ELLE ? 'iPhone Settings → Notifications → ' + NAME : 'your phone’s Settings → Apps → ' + NAME + ' → Notifications') + '.</p>';
+    else if (perm !== 'granted' || !prefs) h += '<p class="msg">' + WHAT + '</p><button type="button" class="npgo">Turn on notifications</button>';
     else h += '<div>' + KINDS.map(([k, t, s]) => '<label class="nprow"><span class="tx">' + t + '<small>' + s + '</small></span><input type="checkbox" class="npsw" role="switch" data-np="' + k + '"' + (prefs[k] !== false ? ' checked' : '') + '></label>').join('') + '</div>';
     c.innerHTML = h;
     const g = c.querySelector('.npgo'); if (g) g.onclick = async () => { g.disabled = true; try { if (await turnOn()) tell('Notifications on') } catch (e) { tell('Couldn’t turn them on. Try again') } card() };
