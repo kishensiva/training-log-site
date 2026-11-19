@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#c2267f"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Hyrox Log"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script>window.WEB_APP="eleanor";window.WEB_TITLE="Eleanor's Hyrox Log";window.SB_URL="https://ytjufveigsdullzlwqlh.supabase.co";window.SB_KEY="sb_publishable_Bo8w_rjk-nQpxSXgE1ctWA_xCvFa6pq";</script><script>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff6fa"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#120f14"><style>html{background:#fff6fa}@media (prefers-color-scheme: dark){html{background:#120f14}}</style><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Hyrox Log"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script>window.WEB_APP="eleanor";window.WEB_TITLE="Eleanor's Hyrox Log";window.SB_URL="https://ytjufveigsdullzlwqlh.supabase.co";window.SB_KEY="sb_publishable_Bo8w_rjk-nQpxSXgE1ctWA_xCvFa6pq";</script><script>
 /* Supabase bridge (plan step 5). Gives the apps the same small database API they used inside claude.ai
    (db.doc('log/2026-11-18').get/set/update/delete/onSnapshot, db.collection('log').orderBy().limit().get/onSnapshot/add),
    backed by the Supabase table public.docs (app, col, id, data). Everything read is also kept on the phone, so the app
@@ -4962,6 +4962,26 @@ function akOrb(){if(!odyOn||!(cur&&mode==='live'&&cur.status==='in_progress'))re
   const was=JSON.stringify(AKT),now=JSON.stringify(m);Object.keys(AKT).forEach(k=>delete AKT[k]);Object.assign(AKT,m);if(was!==now)akRefresh()},()=>{})}catch(e){}})();
 (async()=>{try{const s=await claude.use('sample');if(!s)return;let lim=null;try{lim=await s.limits()}catch(e){}if(!lim||!lim.tools)return;odySample=s;odyOn=true;odyFab();try{if(cur)renderSession()}catch(e){}}catch(e){}})();
 window.AK={reloadRules:()=>{AK_RULES=null},open:()=>odyOpen(),send:t=>odySend(t),close:()=>odyClose(),state:ODY,ctx:()=>odyCtx(),tools:m=>odyTools(m||{})};
+}catch(e){console.error(e)}
+;
+try{
+/* "Your app has moved" (19 Nov 2026, Kishen's request): only in the old claude.ai version, never in the new web app.
+   Points her to the installable app, where Ask Kishen lives. "Later" hides it until tomorrow. */
+(function(){if(window.WEB_APP)return;const URL_='https://kishensiva.github.io/training-log-site/eleanor/';
+  const k='movedLater',t=new Date().toISOString().slice(0,10);let later=null;try{later=localStorage.getItem(k)}catch(e){}if(later===t)return;
+  const st=document.createElement('style');st.textContent=`.mvd{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;padding:16px 18px;border-radius:22px;color:#fff;text-decoration:none;
+background:radial-gradient(120% 90% at 100% 0%,rgba(255,170,210,.45),transparent 55%),linear-gradient(160deg,#e0428f,#8e1f6a);box-shadow:0 14px 30px -18px rgba(194,38,127,.8)}
+.mvd small{font:600 12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;opacity:.85}
+.mvd b{font-size:22px;line-height:1.15;font-weight:800}
+.mvd span{font-size:15px;line-height:1.4;opacity:.95}
+.mvd .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}
+.mvd .go{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 20px;border-radius:999px;background:#fff;color:#a3185f;font-weight:800;font-size:16px;opacity:1}
+.mvd .lt{background:none;border:0;box-shadow:none;color:#fff;opacity:.85;font-size:14px;text-decoration:underline;text-underline-offset:3px;min-height:44px;padding:0 4px;margin:0;width:auto;align-self:center;text-transform:none;letter-spacing:0}`;
+  document.head.appendChild(st);
+  const a=document.createElement('a');a.className='mvd';a.href=URL_;a.target='_blank';a.rel='noopener';
+  a.innerHTML='<small>eleanor_log · update 2.4.0 · git checkout new_app</small><b>Your app has moved 💕</b><span>Your new home has its own icon, works offline, and Ask Kishen lives there now. All your training is already inside.</span><div class="row"><span class="go">Open my new app</span><button type="button" class="lt">Later</button></div>';
+  a.querySelector('.lt').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();try{localStorage.setItem(k,t)}catch(_){}a.remove()});
+  const w=document.querySelector('.wrap[role="main"]'),x=document.getElementById('xpc');if(w&&x)w.insertBefore(a,x);else if(w)w.prepend(a)})();
 }catch(e){console.error(e)}
 ;
 const APP_NAME='eleanor',APP_VER='e39';
