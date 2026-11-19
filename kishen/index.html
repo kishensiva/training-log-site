@@ -492,7 +492,9 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
    - Today: when today's check-in is open, any empty box among HRV, resting HR, Body Battery and sleep score is
      filled from Garmin and saved. Numbers he typed himself are never replaced. Training Readiness stays manual
      (the Personal API doesn't offer it).
-   - The server also pulls at 6:05 and 6:20am into garmin/<date> so the 6:27am coach has the numbers first. */
+   - The server also pulls at 6:05 and 6:20am into garmin/<date> so the 6:27am coach has the numbers first.
+   - 19 Nov: steps, calories and intensity minutes on Today (one line) and Progress → Training (4-week card). These come
+     only from Garmin, so nothing is counted twice; workouts are merged with Strava's in the page itself (stvMerge). */
 (function () {
   if (window.WEB_APP !== 'kishen') return;
   const KEYS = [['hrv', 'HRV'], ['restingHR', 'resting HR'], ['bodyBattery', 'Body Battery'], ['sleepScore', 'sleep score']];
@@ -566,7 +568,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     filling = true;
     try {
       let v = values;
-      if (!v) { const r = await window.sbFn('garmin', { action: 'today', date: d, cached: !force }); v = r && r.values }
+      if (!v) { const r = await window.sbFn('garmin', { action: 'today', date: d, cached: false }); v = r && r.values }
       lastFill = Date.now(); filledFor = d;
       if (!v || isoD(sel) !== d) return;
       const got = [];
@@ -581,8 +583,44 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     finally { filling = false }
   }
 
+  /* steps and calories: one line on Today, a 4-week card on Progress → Training */
+  const fmtN = n => Math.round(n).toLocaleString('en-GB');
+  const dayIso = (d, off) => { const x = new Date(d); x.setDate(x.getDate() + off); return isoD(x) };
+  function dayLine() {
+    const host = document.getElementById('view-today'), ready = document.getElementById('ready'); if (!host || !ready) return;
+    let el = document.getElementById('garday');
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, t = G[isoD(today)] || {}, y = G[dayIso(today, -1)] || {};
+    const parts = [];
+    if (typeof t.steps === 'number') parts.push('<b>' + fmtN(t.steps) + '</b> steps today');
+    if (typeof y.steps === 'number') parts.push('yesterday ' + fmtN(y.steps) + ' steps' + (typeof y.kcalTotal === 'number' ? ', ' + fmtN(y.kcalTotal) + ' kcal' : '') + (typeof y.intensityMin === 'number' ? ', ' + y.intensityMin + ' intensity min' : ''));
+    const show = parts.length && isoD(sel) === isoD(today);
+    if (!show) { if (el) el.remove(); return }
+    if (!el) { el = document.createElement('p'); el.id = 'garday'; el.className = 'msg'; el.style.cssText = 'margin:0;font-size:14px;color:var(--muted)'; ready.parentNode.insertBefore(el, ready) }
+    const h = parts.join(' · ') + ' <small style="opacity:.8">· Garmin</small>';
+    if (el.innerHTML !== h) el.innerHTML = h;
+  }
+  function weekCard() {
+    const host = document.getElementById('view-prog'); if (!host) return;
+    const G = (typeof garDay !== 'undefined' && garDay) || {}, days = Object.keys(G).filter(k => typeof G[k].steps === 'number');
+    let c = document.getElementById('garact');
+    if (!days.length) { if (c) c.remove(); return }
+    if (!c) { c = document.createElement('section'); c.className = 'card'; c.id = 'garact'; c.dataset.pg = 'train'; c.setAttribute('aria-labelledby', 'garacth'); host.appendChild(c) }
+    const mon = d => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return isoD(x) };
+    const wk = {}; days.forEach(k => { const m = mon(k); (wk[m] = wk[m] || []).push(G[k]) });
+    const ws = Object.keys(wk).sort().slice(-4), cur = mon(isoD(today));
+    const avg = (a, f) => { const v = a.map(x => x[f]).filter(x => typeof x === 'number'); return v.length ? v.reduce((p, q) => p + q, 0) / v.length : null };
+    const rows = ws.map(m => { const a = wk[m], st = avg(a, 'steps'), ka = avg(a, 'kcalActive'), im = a.reduce((p, x) => p + (typeof x.intensityMin === 'number' ? x.intensityMin : 0), 0);
+      const lbl = m === cur ? 'This wk' : new Date(m + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      return '<tr><td>' + lbl + '</td><td class="num">' + (st != null ? fmtN(st) : '–') + '</td><td class="num">' + (ka != null ? fmtN(ka) : '–') + '</td><td class="num">' + im + '</td></tr>' }).join('');
+    const h = '<h2 id="garacth">Steps and activity</h2><p class="msg" style="margin:0 0 8px">Daily averages from your Garmin. Intensity minutes count vigorous minutes twice, like Garmin does; the usual target is 150 a week.</p>' +
+      '<table style="width:100%;font-size:14px;border-collapse:collapse"><thead><tr style="color:var(--muted);text-align:left"><th style="font-weight:500">Week of</th><th style="font-weight:500">Steps/day</th><th style="font-weight:500">Active kcal/day</th><th style="font-weight:500">Intensity min</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    if (c.innerHTML !== h) c.innerHTML = h;
+  }
+  window.garDayChanged = () => { try { dayLine(); weekCard() } catch (e) {} };
+
   db().then(d => { if (!d) return;
     card();
+    setInterval(window.garDayChanged, 4000);
     setTimeout(fill, 2500);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(fill, 1200) });
     document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#nav')) setTimeout(fill, 800) }, true);
@@ -3298,7 +3336,7 @@ function effPlan(d,L){L=L||logs;const k=iso(d),l=L[k],base=planFor(d);if(base.pr
   return base}
 
 /* state */
-let mcp=null,strava={},stvBusy=false,stvAt=0,stvErr=null,stvLoaded=false;
+let mcp=null,strava={},stravaRaw={},garDay={},stvBusy=false,stvAt=0,stvErr=null,stvLoaded=false;
 let minds=[],db=null,sample=null,logs={},coach=null,report=null,reqs=[],tests=[],liftSel=null;
 let today=new Date();today=new Date(today.getFullYear(),today.getMonth(),today.getDate());
 let sel=new Date(today),view='today',cur=null,mode='preview',picker=null,editing=false,readyBusy=false,readyOpen=false,ready={};
@@ -4968,11 +5006,23 @@ function stvAct(a,p,u){const s=a.summary||{},sec=s.moving_time||s.elapsed_time||
 function stvZones(s){const H=s&&s.heart_rate,T=s&&s.time;if(!Array.isArray(H)||!Array.isArray(T)||H.length<5||H.length!==T.length)return null;
   let e=0,m=0,x=0;for(let i=1;i<H.length;i++){const dt=Math.max(0,Math.min(120,(+T[i])-(+T[i-1]))),v=((+H[i])+(+H[i-1]))/2;if(!(v>0))continue;if(v>=165)x+=dt;else if(v>137)m+=dt;else e+=dt}
   const t=e+m+x;if(t<120)return null;return{easy:r1(e/60),mid:r1(m/60),hard:r1(x/60),pctEasy:Math.round(e/t*100)}}
+/* Garmin + Strava (19 Nov 2026, his ask): the same workout reaches the app twice (watch → Garmin → Strava). strava{} is
+   the merged view everything reads: a Garmin workout and a Strava one of the same kind that started within 5 min are
+   one workout (Garmin's numbers win, Strava fills what Garmin lacks, such as heart-rate zones and laps); anything only
+   one side has is kept. stravaRaw{} is Strava's own copy, the only thing stvSync writes back. */
+const actKind=t=>STVMODE[t]||(t==='WeightTraining'?'lift':'other');
+function stvMergeDay(G,S){G=Array.isArray(G)?G:[];S=Array.isArray(S)?S:[];const out=[],used=new Set();
+  G.forEach(g=>{const t=Date.parse(g.start),s=S.find(x=>!used.has(x)&&actKind(x.type)===actKind(g.type)&&Math.abs(Date.parse(x.start)-t)<5*60e3);
+    if(s){used.add(s);const m={...s};Object.keys(g).forEach(k=>{if(g[k]!=null)m[k]=g[k]});m.stv=s.id;out.push(m)}else out.push({...g})});
+  S.forEach(x=>{if(!used.has(x))out.push({...x,src:x.src||'strava'})});
+  return out.sort((x,y)=>x.start<y.start?-1:1)}
+function stvMerge(){const m={},ds=new Set([...Object.keys(stravaRaw),...Object.keys(garDay).filter(d=>Array.isArray(garDay[d].acts))]);
+  ds.forEach(d=>{const s=stravaRaw[d]||{},g=garDay[d]||{};m[d]={...s,date:d,acts:stvMergeDay(g.acts,s.acts),syncedAt:s.syncedAt||g.actsAt}});return m}
 function stvMain(d){const s=strava[d];if(!s||!Array.isArray(s.acts))return null;const A=s.acts.filter(x=>!x.warm&&STVMODE[x.type]);
   /* drop a duplicate upload (same sport, started within 3 min) that has no heart rate, so the copy with HR wins */
   const B=A.filter(x=>!(x.hr==null&&A.some(y=>y!==x&&y.hr!=null&&STVMODE[y.type]===STVMODE[x.type]&&Math.abs(Date.parse(y.start)-Date.parse(x.start))<180e3)));
   return B.sort((x,y)=>y.mins-x.mins)[0]||null}
-function stvRun(a){const o={mins:a.mins,mode:STVMODE[a.type]||'run',stv:a.id,source:'Strava'};
+function stvRun(a){const o={mins:a.mins,mode:STVMODE[a.type]||'run',stv:a.id,source:a.src==='garmin'?'Garmin':'Strava'};
   ['hr','maxHr','kcal','pace','laps'].forEach(k=>{if(a[k]!=null)o[k]=a[k]});if(a.km)o.km=r1(a.km);if(a.cad)o.cadence=a.cad;return o}
 function stvFill(d){if(!cur||cur.practice||d.stv||d.hr!=null||cur.status==='done')return false;const a=stvMain(cur.date);if(!a)return false;Object.assign(d,stvRun(a));persist();return true}
 async function stvBackfill(d){const l=logs[d],a=stvMain(d);if(!db||!l||!a||l.type!=='cardio'||l.status!=='done'||!l.run||!l.run.done)return;
@@ -4980,17 +5030,17 @@ async function stvBackfill(d){const l=logs[d],a=stvMain(d);if(!db||!l||!a||l.typ
   const dn=l.run.done;if(dn.stv||dn.hr)return;
   try{await db.doc('log/'+d).update({run:{...l.run,done:{...dn,...stvRun(a),mode:dn.mode||STVMODE[a.type]||'run'}}})}catch(e){}}
 async function stvSync(force){if(!mcp||!db||!stvLoaded||stvBusy)return;if(!force&&Date.now()-stvAt<3*60e3)return;stvBusy=true;stvAt=Date.now();
-  const was=stvErr;let changed=false;const since=new Date(today);since.setDate(since.getDate()-(Object.keys(strava).length?10:60));
+  const was=stvErr;let changed=false;const since=new Date(today);since.setDate(since.getDate()-(Object.keys(stravaRaw).length?10:60));
   const q={range_start:iso(since)+'T00:00:00',first:60,use_preferred_units:true};
   try{let r;try{r=await mcp.callTool('Strava','list_activities',q,{cache:false})}
       catch(e){if(!e||!e.retryable)throw e;await new Promise(z=>setTimeout(z,Math.min(+e.retryAfterMs||2000+Math.random()*2000,60000)));r=await mcp.callTool('Strava','list_activities',q,{cache:false})}
     const pl=stvPL(r)||{},acts=Array.isArray(pl.activities)?pl.activities:[],u=pl.value_units&&pl.value_units.distance;
     const by={};acts.forEach(a=>{const d=String(a.start_local||'').slice(0,10);if(/^\d{4}-\d\d-\d\d$/.test(d)&&a.id!=null)(by[d]=by[d]||[]).push(a)});
-    for(const d of Object.keys(by).sort()){const have=(strava[d]&&Array.isArray(strava[d].acts))?strava[d].acts:[],ids=new Set(have.map(x=>x.id)),nw=by[d].filter(a=>!ids.has(String(a.id)));
+    for(const d of Object.keys(by).sort()){const have=(stravaRaw[d]&&Array.isArray(stravaRaw[d].acts))?stravaRaw[d].acts:[],ids=new Set(have.map(x=>x.id)),nw=by[d].filter(a=>!ids.has(String(a.id)));
       {const out=have.map(x=>({...x}));let dirty=nw.length>0;
         for(const a of nw){let p=null;try{p=stvPL(await mcp.callTool('Strava','get_activity_performance',{activity_id:String(a.id)}))}catch(e){}out.push(stvAct(a,p,u))}
         for(const o of out){if(STVMODE[o.type]&&!o.warm&&o.hz===undefined){let z=null;try{z=stvZones(stvPL(await mcp.callTool('Strava','get_activity_streams',{activity_id:String(o.id),streams:['heart_rate','time'],resolution:200})))}catch(e){}o.hz=z;dirty=true}}
-        if(dirty){out.sort((x,y)=>x.start<y.start?-1:1);const doc={date:d,acts:out,syncedAt:new Date().toISOString()};strava[d]=doc;changed=true;
+        if(dirty){out.sort((x,y)=>x.start<y.start?-1:1);const doc={date:d,acts:out,syncedAt:new Date().toISOString()};stravaRaw[d]=doc;strava=stvMerge();changed=true;
         try{await db.doc('strava/'+d).set(doc)}catch(e){}}}
       await stvBackfill(d)}
     stvErr=null}
@@ -5009,7 +5059,7 @@ function stvLift(date){const s=strava[date],A=(s&&Array.isArray(s.acts))?s.acts:
   const kcal=[m].concat(wu).reduce((t,a)=>t+(+a.kcal||0),0);return{hr:m.hr||null,maxHr:m.maxHr||null,kcal:kcal||null,mins:m.mins,wu:wu.map(a=>({mins:a.mins,n:stvName(a).replace(/ warm-up$/,'').toLowerCase()}))}}
 function stvName(a){const m=STVMODE[a.type];return a.type==='WeightTraining'?'Weights':m==='bike'?(a.warm?'Bike warm-up':'Bike'):m==='run'?(a.warm?'Run warm-up':'Run'):m==='walk'?'Walk':m==='row'?'Rower':m==='stairs'?'Stairs':a.warm?'Warm-up':'Workout'}
 function stvHtml(date){if(!mcp&&!strava[date])return'';const s=strava[date],A=(s&&Array.isArray(s.acts))?s.acts:[];
-  const hd='<div class="stv"><div class="stvh"><b>From your watch</b><small>via Strava</small></div>';
+  const sr=[...new Set(A.map(a=>a.src==='garmin'?'Garmin':'Strava'))].join(' + ')||'Strava',hd='<div class="stv"><div class="stvh"><b>From your watch</b><small>via '+sr+'</small></div>';
   if(!A.length){if(!stvErr)return'';const[t,b]=stvErrTxt();if(!t)return'';return hd+'<p class="msg" style="margin:0">'+esc(t)+'</p>'+(b?'<button class="morebtn" data-stvgo="1">'+esc(b)+'</button>':'')+'</div>'}
   let h=hd;A.forEach(a=>{const t=/T\d\d:\d\d/.test(a.start)?a.start.slice(11,16):'';
     h+='<div class="stvr"><span>'+esc(stvName(a))+'<small>'+esc(t)+'</small></span><span class="num">'+[a.mins+' min',a.km?a.km+' km':'',a.pace?a.pace+' /km':'',a.hr?'avg HR '+a.hr:'',a.maxHr?'max '+a.maxHr:'',a.kcal?a.kcal+' kcal':''].filter(Boolean).map(x=>esc(x).replace(/ /g,'&nbsp;')).join(' · ')+'</span></div>';
@@ -5048,8 +5098,10 @@ loadSession();renderAll(true);loop();setTimeout(()=>navInd(true),50);
   db.doc('coach/rotation').onSnapshot(s=>{const v=s.exists?s.data():{};rot={active:{},dismissed:{},tried:[],ideas:[],...v};
     (rot.ideas||[]).forEach(i=>{const d=i&&i.def;if(i&&i.to&&!X[i.to]&&d&&+d.s>0&&+d.lo>0)X[i.to]={s:+d.s,lo:+d.lo,hi:+(d.hi||d.lo),rest:+d.rest||90,m:Array.isArray(d.m)?d.m.map(String):[],st:+d.st||2.5,seed:+d.seed||0,cue:String(d.cue||'')}});
     if(mode==='preview'){loadSession();renderSession()}if(view==='prog')renderProgress()},()=>{});
-  db.collection('strava').orderBy('date','desc').limit(120).onSnapshot(s=>{const m={};s.docs.forEach(d=>{const v=d.data();if(v&&v.date)m[v.date]=v});strava=m;
+  db.collection('strava').orderBy('date','desc').limit(120).onSnapshot(s=>{const m={};s.docs.forEach(d=>{const v=d.data();if(v&&v.date)m[v.date]=v});stravaRaw=m;strava=stvMerge();
     if(!stvLoaded){stvLoaded=true;setTimeout(()=>stvSync(),1200)}if(mode==='summary'||(mode==='preview'&&cur&&cur.type==='cardio'))renderSession()},()=>{});
+  db.collection('garmin').onSnapshot(s=>{const m={};s.docs.forEach(d=>{const v=d.data();if(v&&/^\d{4}-\d\d-\d\d$/.test(v.date||''))m[v.date]=v});garDay=m;strava=stvMerge();
+    if(mode==='summary'||(mode==='preview'&&cur&&cur.type==='cardio'))renderSession();try{window.garDayChanged&&window.garDayChanged()}catch(e){}},()=>{});
   (async()=>{try{mcp=await claude.use('mcp')}catch(e){mcp=null}if(mcp)stvSync()})();
   db.doc('settings/plates').onSnapshot(s=>{const v=s.exists?s.data():null;if(v&&v.base&&typeof v.base==='object'){PB={...v.base};try{localStorage.setItem('plateBase',JSON.stringify(PB))}catch(e){}if(mode==='live')renderSession()}},()=>{});
 })();
