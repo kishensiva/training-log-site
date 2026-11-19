@@ -1,4 +1,143 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff6fa"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#120f14"><style>html{background:#fff6fa}@media (prefers-color-scheme: dark){html{background:#120f14}}</style><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Hyrox Log"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script>window.WEB_APP="eleanor";window.WEB_TITLE="Eleanor's Hyrox Log";window.SB_URL="https://ytjufveigsdullzlwqlh.supabase.co";window.SB_KEY="sb_publishable_Bo8w_rjk-nQpxSXgE1ctWA_xCvFa6pq";</script><script>
+/* Opening intro (19 Nov 2026, Kishen's design: dots drift in and connect while the app loads, Apple-Wallet-style
+   lettering, then today's session card slides up into place). Kishen's web app, and Eleanor's from 19 Nov (her pink, her AI Kishen's words).
+   - Fresh opens only: a page load (the phone closes the app overnight, so the morning open counts), not switching back
+     to the app, and not again within 10 minutes. Tap anywhere to skip. Progress → Body has an on/off switch.
+   - It does real work: the Garmin pull starts the moment it shows (garmin.js garPull), and the words follow the loading:
+     "Waking up your trainer…" until Today has drawn, "Initialising your day…" until Garmin has answered,
+     then "Get ready." and the card. At least 2 s, at most about 6 s, never stuck (8 s failsafe).
+   - Dot colours follow the day's card: strength red/violet, hypertrophy gold/lavender, deload mint/blue, light day silver.
+   - Drawn on one <canvas> (about 1 ms a frame), so it stays smooth on the phone. No sound.
+   - Reduced motion on the phone: no dots, just a short fade. */
+(function () {
+  /* 19 Nov: Eleanor's app too, in her pink, with her AI Kishen's words and no Garmin to wait for */
+  const APP = window.WEB_APP; if (APP !== 'kishen' && APP !== 'eleanor') return;
+  const ELLE = APP === 'eleanor', LIGHT = ELLE && (() => { try { return !matchMedia('(prefers-color-scheme: dark)').matches } catch (e) { return false } })();
+  const NAME = ELLE ? 'Eleanor' : 'Kishen', WORDS = ELLE ? ['Waking up Kishen…', 'Planning your Hyrox day…', 'Let’s go, babe.'] : ['Waking up your trainer…', 'Initialising your day…', 'Get ready.'];
+  const INK = LIGHT ? '#2b1020' : '#fff', MUTE = LIGHT ? 'rgba(70,25,50,.55)' : 'rgba(235,235,245,.6)', SPARK = LIGHT ? '194,38,127' : '255,255,255', BLEND = LIGHT ? 'source-over' : 'lighter';
+  const STAGE = LIGHT ? 'radial-gradient(110% 60% at 50% 32%,#ffe3f0 0%,#fff6fa 60%,#fff0f6 100%)' : 'radial-gradient(110% 60% at 50% 32%,var(--kbg,' + (ELLE ? '#2a0f22' : '#141417') + ') 0%,' + (ELLE ? '#120f14' : '#0c0c0e') + ' 58%,#070707 100%)';
+  const LS = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} } };
+  const animOn = () => LS.get('introAnim') !== '0';
+  const reduced = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches } catch (e) { return false } })();
+  const PAL = { str: [[255, 110, 125], [138, 107, 255]], hyp: [[255, 214, 110], [154, 140, 255]], del: [[120, 255, 215], [63, 170, 255]], lgt: [[255, 255, 255], [150, 168, 196]], none: [[235, 235, 245], [170, 175, 190]],
+    elle: LIGHT ? [[232, 70, 150], [150, 90, 220]] : [[255, 134, 194], [170, 130, 255]] };
+
+  let last = 0; try { last = +sessionStorage.getItem('introAt') || 0 } catch (e) {}
+  const play = animOn() && Date.now() - last > 10 * 60e3 && !/[?&]nointro/.test(location.search);
+  if (play) run();
+
+  function run() {
+    try { sessionStorage.setItem('introAt', String(Date.now())) } catch (e) {}
+    window.__introOn = true;
+    const h = new Date().getHours(), greet = h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+    const SF = "-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Inter',system-ui,sans-serif";
+    const css = `#kintro{position:fixed;inset:0;z-index:2147483000;overflow:hidden;cursor:pointer;-webkit-tap-highlight-color:transparent;background:${STAGE}}
+#kintro canvas{position:absolute;inset:0;width:100%;height:100%}
+#kintro .hi{position:absolute;left:24px;right:24px;top:calc(env(safe-area-inset-top,0px) + 78px);display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;font-family:${SF};-webkit-font-smoothing:antialiased;animation:ki-in .6s .15s both}
+#kintro .gr{font-weight:400;font-size:17px;letter-spacing:-.01em;color:${MUTE}}
+#kintro .nm{font-weight:700;font-size:34px;line-height:1.15;letter-spacing:-.022em;color:${INK}}
+#kintro .st{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 164px);height:28px;text-align:center;font-family:${SF};-webkit-font-smoothing:antialiased}
+#kintro .st span{position:absolute;left:0;right:0;top:0;line-height:28px;font-size:15px;letter-spacing:-.01em;color:${MUTE};opacity:0;transform:translate3d(0,6px,0);transition:opacity .35s,transform .35s}
+#kintro .st span.on{opacity:1;transform:none}
+#kintro .st span.gone{opacity:0;transform:translate3d(0,-6px,0)}
+#kintro .st .s3{font-size:20px;font-weight:600;letter-spacing:-.02em;color:${INK}}
+#kintro.out{transition:opacity .55s ease .25s;opacity:0}
+#kintro.out .hi,#kintro.out .st{transition:opacity .3s,transform .3s;opacity:0;transform:translate3d(0,-14px,0)}
+@keyframes ki-in{from{opacity:0;transform:translate3d(0,10px,0)}to{opacity:1;transform:none}}
+#session .hero.kin{animation:ki-card 1.05s cubic-bezier(.16,1,.3,1) both}
+@keyframes ki-card{from{opacity:0;transform:perspective(1000px) translate3d(0,55vh,0) rotateX(20deg) scale(.93)}40%{opacity:1}to{opacity:1;transform:none}}`;
+    const st = document.createElement('style'); st.textContent = css; (document.head || document.documentElement).appendChild(st);
+    const el = document.createElement('div'); el.id = 'kintro'; el.setAttribute('role', 'img'); el.setAttribute('aria-label', 'Good ' + greet + ', ' + NAME);
+    el.innerHTML = (reduced ? '' : '<canvas aria-hidden="true"></canvas>') + '<div class="hi"><span class="gr">Good ' + greet + '</span><span class="nm">' + NAME + '</span></div>' +
+      '<div class="st" aria-hidden="true">' + WORDS.map((w, i) => '<span class="s' + (i + 1) + '">' + w + '</span>').join('') + '</div>';
+    (document.body || document.documentElement).appendChild(el);
+    if (!document.body) document.addEventListener('DOMContentLoaded', () => { try { document.body.appendChild(el) } catch (e) {} });
+    const $s = c => el.querySelector('.' + c), stage = n => { ['s1', 's2', 's3'].forEach((c, i) => { const x = $s(c); x.classList.toggle('on', i === n - 1); x.classList.toggle('gone', i < n - 1) }) };
+    setTimeout(() => stage(1), 250);
+
+    /* ---------- dots ---------- */
+    const T0 = performance.now(); let raf = 0, done = false, pal = (ELLE ? PAL.elle : PAL.none).map(c => c.slice()), palTo = ELLE ? PAL.elle : PAL.none, W = 390, H = 844, P = [], E = [], D = [], S = [], g = null, endAt = 0;
+    function setup() {
+      const c = el.querySelector('canvas'); if (!c) return;
+      W = innerWidth || 390; H = innerHeight || 844; const dpr = Math.min(2, devicePixelRatio || 1);
+      c.width = W * dpr; c.height = H * dpr; g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      let s = 12345; const R = () => (s = (s * 16807) % 2147483647) / 2147483647, gs = () => Math.sqrt(-2 * Math.log(R() + 1e-9)) * Math.cos(2 * Math.PI * R());
+      const cx = W / 2, cy = H * 0.36, sx = W * 0.26, sy = H * 0.14, n = Math.round(380 * Math.min(1.3, W * H / (390 * 844)));
+      for (let k = 0; k < 12000 && P.length < n; k++) { const x = cx + gs() * sx, y = cy + gs() * sy; if (x < 8 || x > W - 8 || y < 60 || y > H * 0.78) continue; if (P.some(p => (p.x - x) ** 2 + (p.y - y) ** 2 < 100)) continue;
+        const a = R() * 6.283, r = 260 + R() * 380; P.push({ x, y, dx: Math.cos(a) * r, dy: Math.sin(a) * r, dl: R() * 1.4, r: P.length % 11 ? 0.9 + R() * 0.8 : 2.1, t: Math.max(0, Math.min(1, x / W)) }) }
+      const mx = Math.max(...P.map(p => Math.hypot(p.x - cx, p.y - cy))); P.forEach(p => { p.d = Math.hypot(p.x - cx, p.y - cy) / mx });
+      P.forEach((p, i) => P.map((q, j) => [(q.x - p.x) ** 2 + (q.y - p.y) ** 2, j]).filter(z => z[1] !== i).sort((a, b) => a[0] - b[0]).slice(0, 3)
+        .forEach(([d2, j]) => { if (d2 < 576 && j > i) E.push({ a: p, b: P[j], st: 1.1 + Math.min(p.d, P[j].d) * 0.8 + R() * 0.5 }) }));
+      for (let k = 0; k < 170; k++) { const near = k % 6 === 0; D.push({ x: -20 + R() * (W + 40), y: -20 + R() * (H + 40), r: near ? 2.2 + R() * 1.6 : 0.4 + R() * 0.6, o: near ? 0.18 + R() * 0.2 : 0.25 + R() * 0.45, mx: -40 + R() * 80, my: -60 + R() * 80, t: R() }) }
+      for (let k = 0; k < 28; k++) { const e = E[Math.floor(R() * E.length)]; if (e) S.push({ e, st: 2.2 + k * 0.04 }) }
+      P.cx = cx; P.cy = cy;
+    }
+    const mix = t => pal[0].map((v, i) => Math.round(v + (pal[1][i] - v) * t)).join(',');
+    function draw(t) {
+      if (!g) return; const cl = v => Math.max(0, Math.min(1, v)), ease = v => 1 - Math.pow(1 - v, 3);
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) pal[i][j] += (palTo[i][j] - pal[i][j]) * 0.08;   // ease into the day's colours
+      const out = endAt ? cl(1 - (t - endAt) / 0.6) : 1; g.clearRect(0, 0, W, H); if (out <= 0) return;
+      g.globalCompositeOperation = BLEND;
+      for (const d of D) { const k = cl(t / 0.6) * out, m = cl(t / 6); g.fillStyle = 'rgba(' + mix(d.t) + ',' + d.o * k + ')'; g.beginPath(); g.arc(d.x + d.mx * m, d.y + d.my * m, d.r, 0, 6.283); g.fill() }
+      const bt = t - 2.2, br = bt > 0 ? 1 + 0.03 * Math.sin(bt / 1.3 * Math.PI * 2) : 1;
+      g.save(); g.translate(P.cx, P.cy); g.scale(br, br); g.translate(-P.cx, -P.cy); g.lineWidth = 0.6;
+      for (const e of E) { const q = ease(cl((t - e.st) / 0.5)); if (q <= 0) continue; g.strokeStyle = 'rgba(' + mix(e.a.t) + ',' + 0.3 * q * out + ')'; g.beginPath(); g.moveTo(e.a.x, e.a.y); g.lineTo(e.a.x + (e.b.x - e.a.x) * q, e.a.y + (e.b.y - e.a.y) * q); g.stroke() }
+      const wave = bt > 0 ? (bt % 1.3) / 1.0 : -1;
+      for (const p of P) { const q = ease(cl((t - p.dl) / 1.3)); if (q <= 0) continue; const x = p.x + p.dx * (1 - q), y = p.y + p.dy * (1 - q), c = mix(p.t);
+        const hot = wave >= 0 && wave <= 1.1 && Math.abs(p.d - wave) < 0.12 ? 1 - Math.abs(p.d - wave) / 0.12 : 0;
+        g.fillStyle = 'rgba(' + c + ',' + 0.16 * q * out + ')'; g.beginPath(); g.arc(x, y, p.r * 3.2, 0, 6.283); g.fill();
+        g.fillStyle = 'rgba(' + (hot ? SPARK : c) + ',' + q * out + ')'; g.beginPath(); g.arc(x, y, p.r * (1 + hot * 0.8), 0, 6.283); g.fill() }
+      for (const s of S) { const q = cl(((t - s.st) % 1.3) / 0.45); if (t < s.st || q <= 0 || q >= 1) continue; const x = s.e.a.x + (s.e.b.x - s.e.a.x) * q, y = s.e.a.y + (s.e.b.y - s.e.a.y) * q;
+        g.fillStyle = 'rgba(' + SPARK + ',' + 0.25 * out + ')'; g.beginPath(); g.arc(x, y, 4, 0, 6.283); g.fill(); g.fillStyle = 'rgba(' + SPARK + ',' + out + ')'; g.beginPath(); g.arc(x, y, 1.3, 0, 6.283); g.fill() }
+      g.restore(); g.globalCompositeOperation = 'source-over';
+    }
+    if (!reduced) { setup(); const f = () => { const t = (performance.now() - T0) / 1000; draw(t); if (!gone) raf = requestAnimationFrame(f) }; raf = requestAnimationFrame(f) }
+
+    /* ---------- following the real loading ---------- */
+    let gone = false, garDone = false, pageDone = false, garAsked = false;
+    const hero = () => document.querySelector('#session .hero, #session .restc, #session .card');
+    const kl = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    const phase = () => { const x = document.querySelector('#session .hero'); const m = x && /\bph-(str|hyp|del|lgt)\b/.exec(x.className); return m ? m[1] : null };
+    const fresh = () => { try { const G = typeof garDay !== 'undefined' && garDay; const t = G && G[kl()]; return !!(t && t.at && Date.now() - Date.parse(t.at) < 15 * 60e3) } catch (e) { return false } };
+    function askGarmin() { if (ELLE) { garDone = true; return } if (garAsked || typeof window.garPull !== 'function' || typeof window.sbFn !== 'function') return; garAsked = true;
+      window.garPull(kl()).then(() => { garDone = true }, () => { garDone = true }) }
+    function tick() {
+      if (done) return; const t = performance.now() - T0;
+      askGarmin();
+      if (!pageDone && hero()) { pageDone = true; const ph = ELLE ? null : phase(); if (ph) { palTo = PAL[ph]; el.style.setProperty('--kbg', { str: '#1d0d14', hyp: '#1c150a', del: '#08181a', lgt: '#121418' }[ph]) } stage(2) }
+      const ready = pageDone && (garDone || fresh() || (!garAsked && t > 3000));
+      if ((t >= 2000 && ready) || t >= 6000) return finish();
+      setTimeout(tick, 100);
+    }
+    function finish() {
+      if (done) return; done = true; stage(3);
+      setTimeout(() => {
+        const x = document.querySelector('#session .hero'); if (x && !reduced) { x.classList.add('kin'); setTimeout(() => x.classList.remove('kin'), 1200) }
+        endAt = (performance.now() - T0) / 1000; el.classList.add('out');
+        setTimeout(() => { gone = true; cancelAnimationFrame(raf); el.remove(); st.remove(); window.__introOn = false; try { window.dispatchEvent(new Event('introdone')) } catch (e) {} }, 900);
+      }, reduced ? 150 : 800);
+    }
+    setTimeout(tick, 300);
+    el.addEventListener('click', finish);
+    setTimeout(finish, 8000);   // never stuck
+  }
+
+  /* ---------- the switch, Progress → Body ---------- */
+  function card() {
+    const host = document.getElementById('view-prog'); if (!host || document.getElementById('introcard')) return;
+    const c = document.createElement('section'); c.className = 'card'; c.id = 'introcard'; c.dataset.pg = 'body'; c.setAttribute('aria-labelledby', 'introh');
+    c.innerHTML = '<h2 id="introh">Opening animation</h2><p class="msg" style="margin:0 0 4px">Plays when you open the app fresh, while ' + (ELLE ? 'your day loads' : 'your day and Garmin numbers load') + '. Tap it to skip.</p>' +
+      '<label style="display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;font-size:15px"><span>Show it</span><input type="checkbox" id="ia"' + (animOn() ? ' checked' : '') + ' style="width:22px;height:22px;accent-color:' + (ELLE ? '#c2267f' : '#d4ff2a') + '"></label>' +
+      '<button type="button" class="morebtn" id="ipv" style="margin-top:4px">Play it now</button>';
+    host.appendChild(c);
+    c.querySelector('#ia').onchange = e => LS.set('introAnim', e.target.checked ? '1' : '0');
+    c.querySelector('#ipv').onclick = () => { try { sessionStorage.removeItem('introAt') } catch (e) {} LS.set('introAnim', '1'); location.reload() };
+  }
+  const start = () => { card(); setInterval(card, 3000) };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
+
+</script><script>
 /* Supabase bridge (plan step 5). Gives the apps the same small database API they used inside claude.ai
    (db.doc('log/2026-11-18').get/set/update/delete/onSnapshot, db.collection('log').orderBy().limit().get/onSnapshot/add),
    backed by the Supabase table public.docs (app, col, id, data). Everything read is also kept on the phone, so the app
@@ -501,7 +640,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   /* Garmin's all-day stress (0–100) for yesterday → the stress chip. Over 60 counts as high (his cut-off, 19 Nov) */
   const stressChip = v => v > 60 ? 'high' : v > 25 ? 'normal' : 'low';
   const db = () => window.claude.use('db');
-  const tell = t => { try { toast(t) } catch (e) {} };
+  const tell = t => { if (window.__introOn) return; try { toast(t) } catch (e) {} };   /* no toast under the opening intro */
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const isoD = d => { try { return iso(d) } catch (e) { return '' } };
   let st = null, lastFill = 0, filling = false, filledFor = '';
@@ -561,6 +700,16 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
       o.disabled = true; try { await window.sbFn('garmin', { action: 'disconnect' }); tell('Garmin disconnected') } catch (e) { tell('Couldn’t disconnect. Try again') } card() };
   }
 
+  /* one Garmin pull shared by everyone who asks within a minute: the opening intro starts it the moment the app opens,
+     fill() and the body card then use the same answer instead of asking again (19 Nov) */
+  let warm = null;
+  function garPull(d) {
+    d = d || isoD(today) || new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+    if (warm && warm.d === d && Date.now() - warm.at < 60e3) return warm.p;
+    const p = Promise.resolve().then(() => window.sbFn('garmin', { action: 'today', date: d, cached: false })).catch(() => null);
+    warm = { d, at: Date.now(), p }; return p;
+  }
+  window.garPull = d => { try { return garPull(d) } catch (e) { return Promise.resolve(null) } };
   /* copy Garmin's numbers into today's empty boxes */
   async function fill(values, force) {
     if (filling) return; const d = isoD(today);
@@ -570,7 +719,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     filling = true;
     try {
       let v = values;
-      if (!v) { const r = await window.sbFn('garmin', { action: 'today', date: d, cached: false }); v = r && r.values }
+      if (!v) { const r = await garPull(d); v = r && r.values }
       lastFill = Date.now(); filledFor = d;
       if (!v || isoD(sel) !== d) return;
       const got = [];
@@ -754,6 +903,7 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
   db().then(d => { if (!d) return;
     card();
     setInterval(window.garDayChanged, 4000);
+    if (window.__introOn) { try { garPull() } catch (e) {} }
     setTimeout(fill, 2500);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(fill, 1200) });
     document.addEventListener('click', e => { if (e.target.closest && e.target.closest('#nav')) setTimeout(fill, 800) }, true);
