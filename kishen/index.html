@@ -2296,10 +2296,13 @@ function pickerHtml(e,s,x){
     return'<div class="picker kgp"><div class="kgrow"><button data-a="nudge" data-d="-1">−1</button><button data-a="nudge" data-d="-0.1">−0.1</button><input class="kgin num" data-kgin="1" type="number" inputmode="decimal" step="0.1" min="0" value="'+cv+'" aria-label="Weight in kg"><button data-a="nudge" data-d="0.1">+0.1</button><button data-a="nudge" data-d="1">+1</button></div><div class="kgq">'+vals.map(v=>'<button class="num'+(v===s.kg?' cur':'')+'" data-a="set" data-v="'+v+'">'+v+'</button>').join('')+'<button class="kgok" data-a="kgok">Done</button></div></div>'}
   return'<div class="picker">'+vals.map(v=>'<button class="num'+(v===s[picker.f]?' cur':'')+'" data-a="set" data-v="'+v+'">'+v+'</button>').join('')+'</div>';
 }
+/* a new personal best: above the old best e1RM; with PR_RULE (Kishen's app, 19 Nov) the first `base` sessions of a lift
+   only set its baseline and the gain must be at least `gain` (2.5%) so small noise isn't called a PR */
+function prBeats(name,before,e,b){const R=typeof window!=='undefined'&&window.PR_RULE;if(!R)return e>b+0.05;return history(name,before).length>=R.base&&e>=b*(1+R.gain)}
 function checkPR(ex,s){
   const b=bestE1(ex.name,cur.date),x=X[ex.name]||{};if(!b.e1||x.unit||x.bw||!s.kg)return;
   const e=e1rm(s.kg,s.reps);
-  if(e>b.e1+0.05)s.pr=1;else delete s.pr;
+  if(prBeats(ex.name,cur.date,e,b.e1))s.pr=1;else delete s.pr;
   /* the PR banner waits for the end of the exercise (every working set ticked), then shows the best one; never mid-exercise */
   const w=ex.sets.filter(z=>z.t!=='W');if(!w.length||!w.every(z=>z.done)||ex.prShown)return;
   const best=Math.max(0,...w.filter(z=>z.pr).map(z=>e1rm(z.kg,z.reps)));if(!best)return;ex.prShown=1;
@@ -2930,7 +2933,7 @@ async function finishSave(status,quick){
   if(cur.startedAt&&!fin0)cur.durationMin=Math.round((Date.parse(cur.finishedAt)-Date.parse(cur.startedAt))/60000);
   const st=setsDone();cur.volume=st.vol;cur.setsDone=st.d;
   cur.skippedEx=[];cur.cutEx=[];if(cur.type==='lift'&&status!=='skipped')(cur.exercises||[]).forEach(e=>{const w=e.sets.filter(s=>s.t!=='W'&&s.t!=='D'),d=w.filter(s=>s.done).length;if(!w.length)return;if(d===0)cur.skippedEx.push(e.name);else if(d<w.length)cur.cutEx.push(e.name+' '+d+'/'+w.length)});
-  cur.prs=[];(cur.exercises||[]).forEach(e=>{const b=bestE1(e.name,cur.date),x=X[e.name];if(!x||x.unit||x.bw)return;let top=0;e.sets.forEach(s=>{if(s.t!=='W'&&s.done)top=Math.max(top,e1rm(s.kg,s.reps))});if(b.e1&&top>b.e1+0.05)cur.prs.push({name:e.name,e1:Math.round(top)})});
+  cur.prs=[];(cur.exercises||[]).forEach(e=>{const b=bestE1(e.name,cur.date),x=X[e.name];if(!x||x.unit||x.bw)return;let top=0;e.sets.forEach(s=>{if(s.t!=='W'&&s.done)top=Math.max(top,e1rm(s.kg,s.reps))});if(b.e1&&prBeats(e.name,cur.date,top,b.e1))cur.prs.push({name:e.name,e1:Math.round(top)})});
   const g0=game();ANIM.date=cur.practice?null:cur.date;ANIM.xp0=xpPct(g0);ANIM.lv0=g0.lv;stopRest();await persist(true);if(!cur.practice)logs[cur.date]=bodyOf(cur);const g1=game();mode='summary';renderAll(true);
   if(!cur.practice&&db){const st={lv:g1.lv,title:g1.title,xp:g1.xp,streak:g1.streak,updatedAt:new Date().toISOString()};if(g1.lv>g0.lv)st.lastLevelUp={lv:g1.lv,title:g1.title,on:cur.date,reward:rewardFor(g1.lv)||null};
     db.doc('game/state').update(st).catch(()=>db.doc('game/state').set(st)).catch(()=>{})}
@@ -5903,6 +5906,211 @@ try{
     setTimeout(()=>{const gi=document.querySelector('#gym .gin'),go=document.querySelector('#gym .ggo[data-a="ok"]');if(!gi||!go||RMq())return;
       const all=[...gi.querySelectorAll('input')].every(i=>String(i.value).trim());if(all&&!gi.contains(document.activeElement)){go.classList.remove('ux2-glow');void go.offsetWidth;go.classList.add('ux2-glow')}},60)},true);
   window.UX2={play};
+})();
+}catch(e){console.error(e)}
+;
+try{
+/* UX upgrade stage 3 (19 Nov 2026, from the Motion Demo he approved 18 Nov): the finish.
+   The "DONE" celebration already counts up time, kg and sets, PRs, the ghost and XP. This adds what the demo had
+   on top of it:
+   - "Best set today" when there's no personal best to show (biggest gain on last time, else the heaviest set);
+   - "Next": tomorrow's session from the plan, so he knows what's coming;
+   - a 6-second Undo bar ("Lower A finished · Undo") that reopens the workout exactly where it was;
+   - on today's summary, a quiet "Finished by mistake? Reopen" link for later. */
+(function(){
+  const css=`.winfx .ux3c{display:flex;flex-direction:column;gap:8px;margin:2px 0 0;animation:ux3in .46s cubic-bezier(.23,1,.32,1) calc(var(--tT,1s) + .9s) both}
+.winfx .ux3c div{background:rgba(255,255,255,.1);border-radius:18px;padding:12px 14px}
+.winfx .ux3c small{display:block;font-size:12px;font-weight:700;letter-spacing:.06em;opacity:.75;text-transform:uppercase}
+.winfx .ux3c b{display:block;font-size:17px;font-weight:700;line-height:1.3;margin-top:2px;font-variant-numeric:tabular-nums;text-wrap:balance}
+.ux3snack{position:fixed;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:120;max-width:500px;margin:0 auto;background:#1d1f24;color:#fff;border-radius:16px;min-height:56px;padding:0 6px 0 16px;display:flex;align-items:center;gap:10px;overflow:hidden;box-shadow:0 12px 30px rgba(0,0,0,.35);animation:ux3up .38s cubic-bezier(.23,1,.32,1) both}
+.ux3snack.top{top:calc(12px + env(safe-area-inset-top,0px));bottom:auto;animation-name:ux3dn}
+.ux3snack.out{animation:ux3down .22s ease-in both}
+.ux3snack span{flex:1;font-size:15px}.ux3snack button{color:#8fb3ff;font-weight:700;min-height:44px;padding:0 12px;background:none;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto;font-size:15px}
+.ux3snack i{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#8fb3ff;transform-origin:left;animation:ux3bar 6s linear both}
+#session .ux3re{display:flex;justify-content:center;margin:4px 0 0}
+#session .ux3re button{background:none;border:0;box-shadow:none;color:var(--muted);font-size:14px;min-height:44px;padding:0 12px;text-decoration:underline;text-underline-offset:3px;text-transform:none;letter-spacing:0;width:auto}
+@keyframes ux3in{from{opacity:0;transform:translateY(14px)}}@keyframes ux3up{from{opacity:0;transform:translateY(18px)}}@keyframes ux3dn{from{opacity:0;transform:translateY(-18px)}}@keyframes ux3down{to{opacity:0;transform:translateY(14px)}}@keyframes ux3bar{to{transform:scaleX(0)}}
+@media (prefers-reduced-motion:reduce){.winfx .ux3c,.ux3snack,.ux3snack i{animation:none}}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const base=()=>String((cur&&cur.title)||'Workout').replace(/ · Express$/,'');
+  const todayIso=()=>{try{return iso(today)}catch(e){return''}};
+
+  function bestSet(){if(!cur||cur.type!=='lift')return'';let best=null;
+    (cur.exercises||[]).forEach(e=>{const x=X[e.name]||{};if(x.unit||x.bw)return;const h=(history(e.name,cur.date)[0]||{}).sets||[];const lastTop=h.filter(z=>z.t!=='W'&&z.done&&+z.kg).reduce((m,z)=>Math.max(m,+z.kg),0);
+      e.sets.forEach(z=>{if(z.t==='W'||!z.done||!(+z.kg>0))return;const gain=lastTop?+z.kg-lastTop:0,e1=e1rm(+z.kg,+z.reps||0);
+        if(!best||gain>best.gain||(gain===best.gain&&e1>best.e1))best={name:e.name,kg:+z.kg,reps:+z.reps||0,gain,e1}})});
+    if(!best)return'';return best.name+' '+r1(best.kg)+' kg × '+best.reps+(best.gain>0?' · up '+r1(best.gain)+' kg on last time':'')}
+  function nextUp(){try{const d=addDays(parse(cur.date),1),p=effPlan(d);if(!p)return'';
+    const when=iso(d)===iso(addDays(today,1))?'tomorrow':DN[d.getDay()];
+    if(p.type==='rest')return(p.title||'Rest day')+' · '+when;
+    const mins=p.type==='cardio'&&p.run&&p.run.mins?' · '+p.run.mins+' min':'';return(p.title||'Training')+mins+' · '+when}catch(e){return''}}
+
+  /* reopen: back to the workout as it was, saved and counted again only when he finishes */
+  async function reopen(){if(!cur||cur.practice||!['done','partial'].includes(cur.status))return;
+    const w=document.getElementById('winfx');if(w)w.remove();
+    cur.status='in_progress';delete cur.finishedAt;delete cur.durationMin;mode='live';
+    try{await persist(true)}catch(e){}try{logs[cur.date]=bodyOf(cur)}catch(e){}renderAll(true);try{window.scrollTo({top:0})}catch(e){}
+    try{const g=game();if(db)db.doc('game/state').update({lv:g.lv,title:g.title,xp:g.xp,streak:g.streak,updatedAt:new Date().toISOString()}).catch(()=>{})}catch(e){}
+    toast('Workout reopened. Finish it again when you’re done')}
+  let snT=null;
+  function snack(text){document.querySelectorAll('.ux3snack').forEach(x=>x.remove());clearTimeout(snT);
+    const d=document.createElement('div');d.className='ux3snack'+(document.getElementById('winfx')?' top':'');   /* at the top over the celebration, so its buttons stay free */
+    d.setAttribute('role','status');d.innerHTML='<span></span><button type="button">Undo</button><i></i>';d.querySelector('span').textContent=text;document.body.appendChild(d);
+    const close=()=>{d.classList.add('out');setTimeout(()=>d.remove(),230)};d.querySelector('button').onclick=()=>{clearTimeout(snT);close();reopen()};snT=setTimeout(close,6000)}
+
+  const w0=win;win=function(o){const r=w0.apply(this,arguments);
+    try{const w=document.getElementById('winfx'),f=w&&w.querySelector('.wfoot');
+      if(w&&f&&!o.practice){const best=o.kind==='lift'&&!(o.prs&&o.prs.length)&&!(o.fx&&o.fx.prs&&o.fx.prs.length)?bestSet():'',nx=nextUp();
+        if(best||nx){const c=document.createElement('div');c.className='ux3c';c.innerHTML=(best?'<div><small>Best set today</small><b></b></div>':'')+(nx?'<div><small>Next</small><b></b></div>':'');
+          const bs=c.querySelectorAll('b');let i=0;if(best)bs[i++].textContent=best;if(nx)bs[i].textContent=nx;f.parentNode.insertBefore(c,f)}
+        setTimeout(()=>snack(base()+' finished'),900)}}catch(e){}
+    return r};
+
+  /* today's summary: a quiet way back in, all day */
+  const rs=renderSession;renderSession=function(){const r=rs.apply(this,arguments);
+    try{const el=document.getElementById('session');if(el&&mode==='summary'&&cur&&!cur.practice&&['done','partial'].includes(cur.status)&&cur.date===todayIso()&&!el.querySelector('.ux3re')){
+      const d=document.createElement('div');d.className='ux3re';d.innerHTML='<button type="button">Finished by mistake? Reopen the workout</button>';d.querySelector('button').onclick=reopen;el.appendChild(d)}}catch(e){}
+    return r};
+  window.UX3={reopen,bestSet,nextUp};
+})();
+}catch(e){console.error(e)}
+;
+try{
+/* UX upgrade stage 4 (19 Nov 2026): data cards on Progress (to-do item 24). One "Your numbers" card per question,
+   at the top of Progress → Training, from data the app already has; nothing here changes the plan.
+   - Week split: lifts, cardio and long-run minutes, last 4 weeks.
+   - Was the easy run easy?: easy sessions under the 137 bpm ceiling, with a heat note.
+   - HRV: daily readings and the 7-day average over 4 weeks, against his normal range (mean ± 1 SD).
+   - Data complete: days this week with Garmin numbers, and days with nothing logged.
+   - Effort and weekly load: a one-tap 1–10 on the "How did it go?" screen; load = effort × minutes (session RPE).
+   - Personal bests, noise filtered: the first 2 sessions of a lift are its baseline, and a gain under 2.5% isn't a PR
+     (applied to the app's own PR stars too, through PR_RULE in core).
+   - Target hit-rate per lift: working sets at the coach's weight with the target reps, last 4 weeks.
+   - Followed the coach's call?: when the coach or the check-in said Express or recovery, did he? (counted from today) */
+(function(){
+  window.PR_RULE={gain:.025,base:2};
+  const css=`#ux4{display:flex;flex-direction:column;gap:12px}
+#ux4 .u4c{background:var(--card);border-radius:20px;padding:16px;box-shadow:inset 0 0 0 1px var(--line)}
+#ux4 h3{margin:0 0 2px;font-size:18px;line-height:1.3;text-transform:none;letter-spacing:0;font-weight:700}
+#ux4 .u4s{margin:0 0 10px;color:var(--muted);font-size:13.5px;line-height:1.4;text-wrap:pretty}
+#ux4 .u4big{font-size:30px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+#ux4 .u4big small{font-size:15px;font-weight:600;color:var(--muted);margin-left:4px}
+#ux4 .u4row{display:grid;grid-template-columns:64px 1fr auto;align-items:center;gap:10px;min-height:30px;font-size:14px;font-variant-numeric:tabular-nums}
+#ux4 .u4row span:first-child{color:var(--muted)}
+#ux4 .u4bar{height:10px;border-radius:5px;background:var(--soft);overflow:hidden;display:flex;gap:2px}
+#ux4 .u4bar i{display:block;height:100%;border-radius:5px}
+#ux4 .u4k{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin-top:8px}
+#ux4 .u4k i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:0}
+#ux4 .c1{background:var(--accent)}#ux4 .c2{background:#f2a33a}#ux4 .c3{background:#2fbf8f}
+#ux4 .u4dots{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;text-align:center;font-size:11.5px;color:var(--muted)}
+#ux4 .u4band{position:relative;height:96px;margin:4px 0 6px}
+#ux4 .u4band .bd{position:absolute;left:0;right:0;background:color-mix(in srgb,var(--accent) 14%,transparent);border-radius:8px}
+#ux4 .u4band .pt{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--fg);box-shadow:0 0 0 2px var(--card)}
+#ux4 .u4band .pt.lo{background:#f2a33a}#ux4 .u4band .pt.hi{background:#2fbf8f}
+#ux4 .u4day{display:grid;place-items:center;height:30px;border-radius:9px;background:var(--soft);font-weight:700;color:var(--fg);font-size:12px}
+#ux4 .u4day.ok{background:color-mix(in srgb,#2fbf8f 22%,var(--soft))}#ux4 .u4day.no{background:none;box-shadow:inset 0 0 0 1.5px var(--line);color:var(--muted)}
+#ux4 .u4day.fut{background:none;color:var(--muted);opacity:.5}
+#ux4 .u4lift{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;font-size:14px;padding:6px 0;border-top:1px solid var(--line)}
+#ux4 .u4lift:first-of-type{border-top:0}
+#ux4 .u4lift .u4bar{grid-column:1/-1;height:6px}
+#ux4 .u4e{color:var(--muted);font-size:13.5px}
+.fbrpe{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin:6px 0 2px}
+.fbrpe button{min-height:44px;padding:0;border-radius:10px;font-weight:700;font-variant-numeric:tabular-nums;text-transform:none;letter-spacing:0}
+.fbrpe button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.fbrpel{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}`;
+  const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
+  const E=s=>esc(String(s));
+  const day=d=>iso(d),mon=d=>addDays(d,-mdow(d));
+  const L=()=>logs||{};
+  const EASY=/^(L|T)$/,isEasy=l=>l&&l.type==='cardio'&&(EASY.test(l.key||'')||l.express||!(l.run&&+l.run.iv));
+  const hrOf=(l,k)=>{const d=l&&l.run&&l.run.done;if(d&&+d.hr)return +d.hr;const s=(typeof strava==='object'&&strava||{})[k];if(!s||!s.acts)return 0;
+    const a=s.acts.filter(x=>/Run|Ride|Walk|Row|Elliptical|StairStepper/i.test(x.type||'')&&!x.warm&&+x.hr&&+x.mins>=10).sort((a,b)=>b.mins-a.mins)[0];return a?+a.hr:0};
+  const minsOf=l=>+(l&&l.durationMin)||+(l&&l.run&&l.run.done&&l.run.done.mins)||0;
+  const did=l=>l&&['done','partial'].includes(l.status);
+
+  /* 1. week split */
+  function split(){const t0=mon(today);let rows=[],mx=1;
+    for(let w=3;w>=0;w--){const a=addDays(t0,-7*w);let lift=0,car=0,lr=0;
+      for(let i=0;i<7;i++){const k=day(addDays(a,i)),l=L()[k];if(!did(l))continue;if(l.type==='lift')lift++;else if(l.type==='cardio'){if(l.key==='L')lr+=minsOf(l);else car++}}
+      rows.push({a,lift,car,lr});mx=Math.max(mx,lift+car)}
+    const mxl=Math.max(60,...rows.map(r=>r.lr));
+    return '<div class="u4c"><h3>Your week split</h3><p class="u4s">Sessions done per week, and long-run minutes. Your plan: 5 lifting days, 1 interval day, 1 long run.</p>'+
+      rows.map(r=>'<div class="u4row"><span>'+(r.a.getTime()===t0.getTime()?'This wk':short(r.a))+'</span><div class="u4bar" aria-hidden="true">'+(r.lift?'<i class="c1" style="width:'+(r.lift/7*100)+'%"></i>':'')+(r.car?'<i class="c2" style="width:'+(r.car/7*100)+'%"></i>':'')+'</div><span>'+r.lift+' lift · '+r.car+' cardio'+(r.lr?' · '+r.lr+' min run':'')+'</span></div>').join('')+
+      '<div class="u4k"><span><i class="c1"></i>Lifting</span><span><i class="c2"></i>Cardio</span></div></div>'}
+  /* 2. was the easy run easy? */
+  function easy(){const from=day(addDays(today,-27));const s=Object.keys(L()).filter(k=>k>=from&&did(L()[k])&&isEasy(L()[k])).sort().map(k=>({k,hr:hrOf(L()[k],k),l:L()[k]})).filter(x=>x.hr);
+    if(!s.length)return '<div class="u4c"><h3>Was the easy run easy?</h3><p class="u4s" style="margin:0">No easy runs with heart rate in the last 4 weeks yet. Your watch fills this in once Strava syncs a run.</p></div>';
+    const ok=s.filter(x=>x.hr<=137).length,avg=Math.round(s.reduce((n,x)=>n+x.hr,0)/s.length);
+    return '<div class="u4c"><h3>Was the easy run easy?</h3><p class="u4s">Easy sessions in the last 4 weeks that stayed at or under 137 bpm on average.</p><div class="u4big">'+ok+' of '+s.length+'<small>avg '+avg+' bpm</small></div>'+
+      s.slice(-6).map(x=>'<div class="u4row"><span>'+short(parse(x.k))+'</span><div class="u4bar" aria-hidden="true"><i class="'+(x.hr<=137?'c3':'c2')+'" style="width:'+Math.min(100,x.hr/175*100)+'%"></i></div><span>'+x.hr+' bpm</span></div>').join('')+
+      '<p class="u4e" style="margin:8px 0 0">KL heat and humidity push heart rate up about 5–10 bpm for the same pace. On hot days slow down or walk the hills: the easy minutes still count.</p></div>'}
+  /* 3. HRV: daily readings (dots) and the 7-day average (line) against his normal range (band), last 4 weeks */
+  function hrv(){const N=28,pts=[];for(let i=N-1;i>=0;i--){const k=day(addDays(today,-i)),r=(L()[k]||{}).readiness;pts.push({k,i,v:r&&+r.hrv?+r.hrv:null})}
+    const got=pts.filter(p=>p.v!=null);
+    if(got.length<4)return '<div class="u4c"><h3>HRV, 7-day average</h3><p class="u4s" style="margin:0">Add your Garmin HRV on a few mornings (Today → How do you feel? → Add Garmin numbers). After 4 readings your normal range and 7-day average show here.</p></div>';
+    const vs=got.map(p=>p.v),m=vs.reduce((a,b)=>a+b,0)/vs.length,sd=Math.sqrt(vs.reduce((a,b)=>a+(b-m)**2,0)/Math.max(1,vs.length-1))||4,lo=m-sd,hi=m+sd;
+    /* 7-day average where the window has at least 2 readings */
+    const avg=pts.map((p,ix)=>{const w=pts.slice(Math.max(0,ix-6),ix+1).filter(q=>q.v!=null);return w.length>=2?w.reduce((a,q)=>a+q.v,0)/w.length:null});
+    const W=320,H=150,l=30,r=8,t=10,b=24,all=vs.concat([lo,hi]),y0=Math.floor((Math.min(...all)-3)/5)*5,y1=Math.ceil((Math.max(...all)+3)/5)*5;
+    const X=ix=>l+(W-l-r)*ix/(N-1),Y=v=>t+(H-t-b)*(1-(v-y0)/(y1-y0));
+    let path='',pen=false;avg.forEach((v,ix)=>{if(v==null){pen=false;return}path+=(pen?'L':'M')+X(ix).toFixed(1)+' '+Y(v).toFixed(1);pen=true});
+    const ticks=[y0,Math.round((y0+y1)/2),y1],xl=[0,7,14,21,27];
+    const svg='<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" aria-label="HRV last 4 weeks: normal range '+Math.round(lo)+' to '+Math.round(hi)+' milliseconds" style="display:block;overflow:visible">'+
+      ticks.map(v=>'<line x1="'+l+'" x2="'+(W-r)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(l-6)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="10" fill="var(--muted)">'+v+'</text>').join('')+
+      '<rect x="'+l+'" y="'+Y(hi)+'" width="'+(W-l-r)+'" height="'+(Y(lo)-Y(hi))+'" rx="4" fill="var(--accent)" opacity=".14"/>'+
+      got.map(p=>{const ix=pts.indexOf(p),c=p.v<lo?'#f2a33a':p.v>hi?'#2fbf8f':'var(--muted)';return'<circle cx="'+X(ix).toFixed(1)+'" cy="'+Y(p.v).toFixed(1)+'" r="3.5" fill="'+c+'"><title>'+short(parse(p.k))+': '+p.v+' ms</title></circle>'}).join('')+
+      (path?'<path d="'+path+'" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>':'')+
+      xl.map(ix=>'<text x="'+X(ix)+'" y="'+(H-6)+'" text-anchor="'+(ix===0?'start':ix===N-1?'end':'middle')+'" font-size="10" fill="var(--muted)">'+(ix===N-1?'Today':short(parse(pts[ix].k)))+'</text>').join('')+'</svg>';
+    const lastA=[...avg].reverse().find(v=>v!=null),lastV=got[got.length-1],low3=pts.slice(-3).every(p=>p.v!=null&&p.v<lo);
+    return '<div class="u4c"><h3>HRV, 7-day average</h3><p class="u4s">Line: your 7-day average. Dots: each morning’s reading. Shaded: your normal range ('+Math.round(lo)+'–'+Math.round(hi)+' ms). One low morning means little; an average sliding under the band is the signal your coach watches.</p>'+svg+
+      '<div class="u4k"><span><i class="c1"></i>7-day average'+(lastA?' '+Math.round(lastA)+' ms':'')+'</span><span>Latest '+lastV.v+' ms · '+short(parse(lastV.k))+'</span>'+(low3?'<span style="color:#f2a33a">3 low mornings in a row</span>':'')+'</div></div>'}
+  /* 4. data complete */
+  function complete(){const a=mon(today);let g=0,none=0,n=0,cells='';const DL=['M','T','W','T','F','S','S'];
+    for(let i=0;i<7;i++){const d=addDays(a,i),k=day(d),l=L()[k],fut=d>today,now=k===day(today),r=l&&l.readiness,has=r&&(+r.hrv||+r.restingHR||+r.sleep||+r.tr),empty=!l||!(l.status||l.readiness);
+      if(!fut){n++;if(has)g++;if(empty&&!now)none++}   /* today isn't "nothing logged" until it's over */
+      cells+='<div><div class="u4day'+(fut?' fut':has?' ok':empty&&!now?' no':'')+'">'+DL[i]+'</div></div>'}
+    return '<div class="u4c"><h3>Data this week</h3><p class="u4s">Green: Garmin numbers in. Outlined: nothing logged at all that day.</p><div class="u4dots">'+cells+'</div><div class="u4e" style="margin-top:8px">Garmin numbers on '+g+' of '+n+' days so far'+(none?' · '+none+' day'+(none>1?'s':'')+' with nothing logged':'')+'</div></div>'}
+  /* 5. effort and weekly load */
+  function load(){const t0=mon(today),wk=[];for(let w=3;w>=0;w--){const a=addDays(t0,-7*w);let s=0,c=0;for(let i=0;i<7;i++){const l=L()[day(addDays(a,i))];if(did(l)&&+l.rpe&&minsOf(l)){s+=+l.rpe*minsOf(l);c++}}wk.push({a,s,c})}
+    const cur0=wk[3],prev=wk.slice(0,3).filter(w=>w.c),avg=prev.length?prev.reduce((n,w)=>n+w.s,0)/prev.length:0,mx=Math.max(1,...wk.map(w=>w.s));
+    if(!wk.some(w=>w.c))return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s" style="margin:0">After each workout, tap how hard it was (1–10) on the "How did it go?" screen. Effort × minutes gives your weekly load, the simplest well-tested way to spot a week that’s too big.</p></div>';
+    return '<div class="u4c"><h3>Effort and weekly load</h3><p class="u4s">Effort (1–10) × minutes, added up per week. A week more than about 30% above your recent average is worth an easier day.</p><div class="u4big">'+Math.round(cur0.s)+'<small>this week'+(avg?' · avg '+Math.round(avg):'')+'</small></div>'+
+      wk.map(w=>'<div class="u4row"><span>'+(w===cur0?'This wk':short(w.a))+'</span><div class="u4bar" aria-hidden="true"><i class="'+(avg&&w.s>avg*1.3?'c2':'c1')+'" style="width:'+(w.s/mx*100)+'%"></i></div><span>'+Math.round(w.s)+'</span></div>').join('')+'</div>'}
+  /* 6–7. lifts: filtered PRs and target hit-rate */
+  function lifts(){const from=day(addDays(today,-27)),M={};
+    Object.keys(L()).filter(k=>k>=from&&did(L()[k])&&L()[k].type==='lift').sort().forEach(k=>(L()[k].exercises||[]).forEach(e=>{const x=X[e.name]||{};if(x.unit||x.bw)return;
+      const w=(e.sets||[]).filter(z=>z.t==='N'&&z.done&&z.tkg!=null&&z.treps!=null);if(!w.length)return;const o=M[e.name]||(M[e.name]={n:0,h:0,s:0});
+      o.s++;w.forEach(z=>{o.n++;if(+z.kg>=+z.tkg-0.01&&+z.reps>=+z.treps)o.h++})}));
+    const rows=Object.entries(M).filter(([,o])=>o.n>=3).sort((a,b)=>b[1].n-a[1].n).slice(0,6);
+    const prs=[];Object.keys(L()).filter(k=>k>=from&&did(L()[k])).sort().forEach(k=>((L()[k].prs)||[]).forEach(p=>{const h=history(p.name,k),b=bestE1(p.name,k);if(h.length>=2&&b.e1&&p.e1>=b.e1*1.025)prs.push({k,name:p.name,e1:p.e1,up:Math.round(p.e1-b.e1)})}));
+    return '<div class="u4c"><h3>Hitting your targets</h3><p class="u4s">Working sets at the coach’s weight with the target reps, last 4 weeks. Around 70–90% means the targets are set right.</p>'+
+      (rows.length?rows.map(([n,o])=>{const p=Math.round(o.h/o.n*100);return'<div class="u4lift"><span>'+E(n)+'</span><b class="num">'+p+'%<small style="color:var(--muted);font-weight:500"> · '+o.h+'/'+o.n+'</small></b><div class="u4bar" aria-hidden="true"><i class="'+(p>=70?'c3':'c2')+'" style="width:'+p+'%"></i></div></div>'}).join(''):'<p class="u4e">Needs a few more logged sessions.</p>')+
+      '<h3 style="margin-top:14px">Real personal bests</h3><p class="u4s">Gains of 2.5% or more on your estimated 1-rep max, after a lift’s first 2 sessions (those set the baseline).</p>'+
+      (prs.length?prs.slice(-5).reverse().map(p=>'<div class="u4row" style="grid-template-columns:64px 1fr auto"><span>'+short(parse(p.k))+'</span><span>'+E(p.name)+'</span><b class="num">'+p.e1+' kg <small style="color:#2fbf8f">+'+p.up+'</small></b></div>').join(''):'<p class="u4e">None in the last 4 weeks that pass the filter.</p>')+'</div>'}
+  /* 8. followed the coach's call? */
+  function call(){const from=day(addDays(today,-27)),c=Object.keys(L()).filter(k=>k>=from&&L()[k].call).map(k=>L()[k].call);
+    const n=c.length,ok=c.filter(x=>x.ok).length;
+    return '<div class="u4c"><h3>Followed the coach’s call?</h3><p class="u4s">When your coach or your check-in said Express or recovery, did you go with it? '+(n?'Last 4 weeks.':'Counting starts with your next workout.')+'</p>'+
+      (n?'<div class="u4big">'+ok+' of '+n+'</div>'+c.slice(-4).reverse().map(x=>'<div class="u4row" style="grid-template-columns:1fr auto"><span>'+E(x.said)+'</span><span>'+(x.ok?'✓ went with it':'did '+E(x.did))+'</span></div>').join(''):'')+'</div>'}
+
+  function render(){const host=document.getElementById('view-prog');if(!host||typeof view==='undefined'||view!=='prog')return;
+    let s=document.getElementById('ux4');if(!s){s=document.createElement('section');s.id='ux4';s.dataset.pg='train';s.setAttribute('aria-label','Your numbers');const first=host.querySelector('section[data-pg="train"]');host.insertBefore(s,first||null)}
+    let h='';[split,load,easy,lifts,hrv,complete,call].forEach(f=>{try{h+=f()}catch(e){console.error(e)}});s.innerHTML=h}
+  const rp=renderProgress;renderProgress=function(){const r=rp.apply(this,arguments);try{render()}catch(e){}return r};
+
+  /* effort 1–10 on the "How did it go?" screen */
+  const rf=renderFeedback;renderFeedback=function(){const r=rf.apply(this,arguments);try{const c=document.querySelector('#session .card');const n=c&&c.querySelector('#fnote');if(!n||c.querySelector('.fbrpe'))return r;
+    const d=document.createElement('div');d.innerHTML='<h2 style="margin-top:6px">How hard was it?</h2><div class="fbrpe" role="group" aria-label="Effort from 1 to 10">'+[1,2,3,4,5,6,7,8,9,10].map(v=>'<button type="button" class="chip" data-rpe="'+v+'" aria-pressed="'+(+cur.rpe===v)+'">'+v+'</button>').join('')+'</div><div class="fbrpel"><span>1 very easy</span><span>10 all-out</span></div>';
+    n.parentNode.insertBefore(d,n);d.addEventListener('click',e=>{const b=e.target.closest('[data-rpe]');if(!b)return;const v=+b.dataset.rpe;cur.rpe=+cur.rpe===v?undefined:v;d.querySelectorAll('[data-rpe]').forEach(x=>x.setAttribute('aria-pressed',String(+cur.rpe===+x.dataset.rpe)))})}catch(e){}return r};
+
+  /* the call, stamped when he finishes or skips: what the coach or check-in said, and what he did */
+  const fs=finishSave;finishSave=function(status){try{if(cur&&!cur.practice&&cur.date&&!cur.call){const c=typeof coach==='object'&&coach&&coach.date===cur.date?coach:null,v=(cur.readiness||{}).verdict;
+      const saidEx=c&&/Express\s*$/.test(c.title||''),saidRest=c&&c.rest===true,saidRec=v==='recover';
+      if(saidEx||saidRest||saidRec){const did=status==='skipped'?'skipped':cur.type==='rest'||status==='recovery'?'recovery':cur.express?'Express':'the full session';
+        const said=saidRest?'Coach: rest day':saidRec?'Check-in: recovery day':'Coach: Express';
+        const ok=(saidRest||saidRec)?did==='recovery'||did==='skipped':did!=='the full session';cur.call={said,did,ok,on:cur.date}}}}catch(e){}
+    return fs.apply(this,arguments)};
+  window.UX4={render};
 })();
 }catch(e){console.error(e)}
 ;
