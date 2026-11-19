@@ -5715,6 +5715,14 @@ try{
 .uxsnack span{flex:1;font-size:15px}.uxsnack button{color:#8fb3ff;font-weight:700;min-height:44px;padding:0 12px;background:none;border:0;box-shadow:none;text-transform:none;letter-spacing:0;width:auto}
 .uxsnack i{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#8fb3ff;transform-origin:left;animation:uxbar 6s linear both}
 @keyframes uxup{from{opacity:0;transform:translateY(18px)}}@keyframes uxdown{to{opacity:0;transform:translateY(14px)}}@keyframes uxbar{to{transform:scaleX(0)}}
+/* header: the same on every day (19 Nov, his call). Row 1: plan line + Today pill (when away from today); row 2: date + ‹ ›.
+   Row 1 keeps its height with or without the pill, so the date never moves. */
+.top{display:grid!important;grid-template-columns:minmax(0,1fr) 40px 40px;grid-template-areas:"eb tb tb" "dt pv nx";column-gap:6px;row-gap:0;align-items:center}
+.top .t{display:contents}
+.top #wklabel{grid-area:eb;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:32px;min-height:32px;margin:0}
+.top #datelabel{grid-area:dt;min-width:0;margin:0}
+.top #prev{grid-area:pv}.top #next{grid-area:nx}
+.top .kback{grid-area:tb;justify-self:end;height:30px!important;min-height:30px!important;padding:0 11px!important;font-size:12.5px!important}
 @media (prefers-reduced-motion:reduce){.uxsh,.uxdim{transition:none}.uxsnack,.uxsnack i,#session .hero.uxfade>*{animation:none}}`;
   const st=document.createElement('style');st.textContent=css;document.head.appendChild(st);
   const FEEL={good:['','Good','train as planned'],meh:['w','Meh','warm up, then decide'],tired:['w','Tired','Express is the smart call'],wrecked:['r','Wrecked','recovery day instead']};
@@ -6014,6 +6022,10 @@ try{
 #ux4 .u4lift:first-of-type{border-top:0}
 #ux4 .u4lift .u4bar{grid-column:1/-1;height:6px}
 #ux4 .u4e{color:var(--muted);font-size:13.5px}
+/* Fresh exercises: every row the same, one-size buttons that never wrap (19 Nov, his call) */
+#rotcard .pl{align-items:center;min-height:56px}
+#rotcard .pl .l{flex:1}
+#rotcard .pl button[data-rot="back"]{flex:none;width:118px;min-height:40px!important;height:40px;padding:0 10px!important;border-radius:999px;white-space:nowrap;font-size:14px;font-weight:600;text-transform:none;letter-spacing:0;align-self:center}
 .fbrpe{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin:6px 0 2px}
 .fbrpe button{min-height:44px;padding:0;border-radius:10px;font-weight:700;font-variant-numeric:tabular-nums;text-transform:none;letter-spacing:0}
 .fbrpe button[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
