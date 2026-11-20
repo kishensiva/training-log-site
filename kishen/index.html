@@ -3668,7 +3668,7 @@ async function finishSave(status,quick){
     db.doc('game/state').update(st).catch(()=>db.doc('game/state').set(st)).catch(()=>{})}
   if(status!=='skipped'&&(cur.type==='lift'||cur.type==='cardio')){const wd=winData(status,g0,g1);setTimeout(()=>win(wd),150);return}
   if(cur.practice)toast(TXT.finishSave);
-  if(status!=='skipped')setTimeout(()=>burst(cur.type==='rest'?14:40),150);
+  if(status!=='skipped'&&cur.type!=='rest')setTimeout(()=>burst(40),150);   /* recovery days finish quietly, no plates */
   if(cur.practice){}else if(g1.xp>g0.xp)toast('+'+(g1.xp-g0.xp)+' XP'+(g1.lv>g0.lv?' · Level '+g1.lv+': '+g1.title+'!':'')+(g1.streak>1?' · streak '+g1.streak:''));
 }
 function renderReqs(){const cut=Date.now()-3*864e5;$('reqlist').innerHTML=reqs.filter(r=>{const t=Date.parse(r.createdAt||r.date||'');return !(t<cut)}).slice(0,5).map(r=>'<div class="pl"><div class="l">'+esc(r.text)+(r.reply?'<small>'+esc(r.reply)+'</small>':'')+'</div><span class="badge '+(r.status==='applied'?'done':'open')+'">'+(r.status==='applied'?'Done':TXT.renderReqs)+'</span></div>').join('')}
