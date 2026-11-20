@@ -916,6 +916,10 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
       if (r && !r.error) { try { localStorage.setItem('garBf', r.left ? '0' : String(Date.now())) } catch (e) {} } } catch (e) {}
   }
   window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} try { vo2Auto() } catch (e) {} };
+  /* 20 Nov: moving to another day hides "Your body today" and the briefing at once (they used to linger up to 4 s on a future day) */
+  const hookTop = () => { if (typeof window.renderTop !== 'function' || window.renderTop.__g) return; const rt = window.renderTop;
+    window.renderTop = function () { const r = rt.apply(this, arguments); try { dayLine() } catch (e) {} try { window.briefRender && window.briefRender() } catch (e) {} return r }; window.renderTop.__g = true };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hookTop); else hookTop();
 
   /* keep the check-in's labels right every time the page redraws it (after the page script has loaded) */
   const wrapSV = () => { if (typeof window.showVerdict === 'function') { const sv = window.showVerdict; window.showVerdict = function () { const r = sv.apply(this, arguments); try { if (document.body.classList.contains('glinked')) linkedUI(true) } catch (e) {} return r } } };
@@ -1863,6 +1867,9 @@ body{background-attachment:fixed}
 :root,:root[data-theme="light"]{--bg:#ffffff;--card:#ffffff;--fg:#111111;--muted:#646466;--line:#e5e5e5;--soft:#f5f5f5;--accent:#1f4bff;--accent-soft:#e9eeff;--accent-fill:#1f4bff;--done:#111111;--done-soft:#ededed;--warn:#b93d0b;--warn-soft:#ffede3;--miss:#c41d33;--miss-soft:#fde4e7;--gold:#3f5600;--gold-soft:#efffb8;--hero:#1f4bff;--hero-fg:#ffffff;--hero-muted:rgba(255,255,255,.9);--hero-line:rgba(255,255,255,.3);--on-accent:#ffffff;--flame:#ff5a1f;--knurl:transparent;--glow:transparent;--volt:#d4ff2a;--orange:#ff5a1f;--ink:#111111;--display:"Barlow Condensed","Avenir Next Condensed","Roboto Condensed","Arial Narrow",sans-serif;--body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color-scheme:light}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111111;--card:#111111;--fg:#ffffff;--muted:#9e9ea0;--line:#2b2b2b;--soft:#1e1e1e;--accent:#6d8bff;--accent-soft:#18203f;--done:#ffffff;--done-soft:#262626;--warn:#ff7a3d;--warn-soft:#3a1a0c;--miss:#ff5c6a;--miss-soft:#3a141a;--gold:#d4ff2a;--gold-soft:#262e08;color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#111111;--card:#111111;--fg:#ffffff;--muted:#9e9ea0;--line:#2b2b2b;--soft:#1e1e1e;--accent:#6d8bff;--accent-soft:#18203f;--done:#ffffff;--done-soft:#262626;--warn:#ff7a3d;--warn-soft:#3a1a0c;--miss:#ff5c6a;--miss-soft:#3a141a;--gold:#d4ff2a;--gold-soft:#262e08;color-scheme:dark}
+/* 20 Nov: a recovery day is its own thing (blue moon), not the amber of a part-done day */
+:root{--rest:#2f6fb8;--rest-soft:#e3edf8}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--rest:#8cbeff;--rest-soft:#16233a}}:root[data-theme="dark"]{--rest:#8cbeff;--rest-soft:#16233a}
+.dot.recovery,.cst.recovery{background:var(--rest-soft);border-color:var(--rest);color:var(--rest)}.dot .moon{width:16px;height:16px;display:block}.cc .moon,.cleg .moon{width:12px;height:12px;display:inline-block;vertical-align:-1px}.cc.recovery .moon{color:var(--rest)}
 body{background-image:none;font-family:var(--body);letter-spacing:-.006em;font-feature-settings:"cv11","ss01"}
 .wrap{padding-inline:20px;gap:14px}
 html{scroll-padding-bottom:96px}
@@ -2137,7 +2144,7 @@ html:has(.livebar):has(#restbar:not([hidden])){scroll-padding-bottom:calc(var(--
 .cwr.rest .ct b{color:var(--muted);font-weight:500}
 .cst{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;background:var(--soft);color:var(--muted)}
 .cst.done{background:var(--done);color:var(--card)}
-.cst.partial,.cst.recovery{background:var(--warn-soft);color:var(--warn)}
+.cst.partial{background:var(--warn-soft);color:var(--warn)}
 .cst.skipped,.cst.missed{background:var(--miss-soft);color:var(--miss)}
 .cst.today{background:var(--fg);color:var(--bg)}
 .cwsum{font-size:13px;color:var(--muted);padding:8px 2px 0;border-top:1px solid var(--line)}
@@ -4038,7 +4045,7 @@ function renderTop(){
   const sun=wkStart(sel),el=$('strip');el.innerHTML='';
   for(let i=0;i<7;i++){const d=addDays(sun,i),st=stateOf(d),b=document.createElement('button');
     b.className='day'+(iso(d)===iso(sel)?' sel':'');b.setAttribute('aria-label',DN[d.getDay()]+' '+short(d)+', '+st);
-    b.innerHTML='<span class="dn">'+DN[d.getDay()]+'</span><span class="dot num '+st+(iso(d)===iso(today)?' today':'')+'">'+(st==='done'?'✓':st==='skipped'||st==='missed'?'✕':st==='recovery'?'~':d.getDate())+'</span>';
+    b.innerHTML='<span class="dn">'+DN[d.getDay()]+'</span><span class="dot num '+st+(iso(d)===iso(today)?' today':'')+'">'+(st==='done'?'✓':st==='skipped'||st==='missed'?'✕':st==='recovery'?'<svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>':d.getDate())+'</span>';
     b.onclick=()=>iso(d)===iso(sel)?openCal():go(d);el.appendChild(b)}
 }
 
@@ -5329,12 +5336,12 @@ function calWeekHtml(){const ws=wkStart(CAL.anchor),w=weekOf(ws),we=addDays(ws,6
   return nav+mvb+'<div class="cwk">'+rows+'</div>'+(CAL.mv&&CAL.mv.dst?mvConfirmHtml():'')+'<p class="cwsum">'+(n?dn+' of '+n+' sessions done'+(light(w)?' · lighter week':''):'No sessions this week')+((()=>{for(let i=0;i<7;i++){const x=addDays(ws,i);if(isCheckDay(x))return' · 4-week check-in on '+x.toLocaleDateString('en-GB',{weekday:'long'})}return''})())+'</p>'+foot}
 function calMonthHtml(){const a=CAL.anchor,m0=new Date(a.getFullYear(),a.getMonth(),1),m1=new Date(a.getFullYear(),a.getMonth()+1,0);let h='<div class="cmo" role="grid" aria-label="'+MN[m0.getMonth()]+' '+m0.getFullYear()+'"><span class="ch2">Wk</span>'+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>'<span class="ch2">'+x+'</span>').join('');
   let n=0,dn=0;for(let ws=wkStart(m0);ws<=m1;ws=addDays(ws,7)){const w=weekOf(ws),ph=PHASE(w);h+='<span class="cwn">'+(w>=1?'W'+w:'')+(w>=1&&PHN[ph]?'<i class="'+ph+'">'+PHN[ph][0]+'</i>':'')+'</span>';
-    for(let i=0;i<7;i++){const d=addDays(ws,i),f=calInfo(d),out=d.getMonth()!==m0.getMonth(),mk=f.st==='done'?'✓':f.st==='partial'||f.st==='recovery'?'~':f.st==='skipped'||f.st==='missed'?'✕':'';
+    for(let i=0;i<7;i++){const d=addDays(ws,i),f=calInfo(d),out=d.getMonth()!==m0.getMonth(),mk=f.st==='done'?'✓':f.st==='recovery'?'<svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>':f.st==='partial'?'~':f.st==='skipped'||f.st==='missed'?'✕':'';
       if(!out&&f.p.type!=='rest'&&!f.p.optional){n++;if(f.st==='done'||f.st==='partial')dn++}
       h+='<button type="button" class="cc'+(f.p.type==='rest'?' rest':'')+(out?' out':'')+(f.today?' today':'')+' '+f.st+'" data-cal="'+iso(d)+'" aria-pressed="'+(CAL.pick===iso(d))+'" style="--ty:'+CTY[f.ty]+'" aria-label="'+DN[d.getDay()]+' '+short(d)+': '+esc(f.p.title)+(CST[f.st]?', '+CST[f.st]:'')+'"><span class="n">'+d.getDate()+'</span>'+(f.tag?'<span class="tg">'+f.tag+'</span>':'')+(mk?'<span class="mk" aria-hidden="true">'+mk+'</span>':'')+'</button>'}}
   h+='</div>';
   const nav='<div class="calnav"><button type="button" data-calnav="-1" aria-label="Previous month">‹</button><div><b>'+['January','February','March','April','May','June','July','August','September','October','November','December'][m0.getMonth()]+' '+m0.getFullYear()+'</b><small>'+(n?dn+' of '+n+' sessions done':'Nothing planned')+'</small></div><button type="button" data-calnav="1" aria-label="Next month">›</button></div>';
-  const leg='<div class="cleg"><span><i style="background:var(--c-low)"></i>Legs</span><span><i style="background:var(--c-up)"></i>Upper</span><span><i style="background:var(--c-car)"></i>Cardio</span><span>✓ done</span><span>✕ missed</span><span>H/S/D hypertrophy, strength, deload</span></div>';
+  const leg='<div class="cleg"><span><i style="background:var(--c-low)"></i>Legs</span><span><i style="background:var(--c-up)"></i>Upper</span><span><i style="background:var(--c-car)"></i>Cardio</span><span>✓ done</span><span>~ part done</span><span><svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg> recovery</span><span>✕ missed</span><span>H/S/D hypertrophy, strength, deload</span></div>';
   let det='<div class="cdet" id="caldet"><small>Tap a day to see the session.</small></div>';
   if(CAL.pick){const d=parse(CAL.pick),f=calInfo(d),[,st]=calStatus(f,d);det='<div class="cdet" id="caldet"><b>'+DN[d.getDay()]+' '+short(d)+' · '+esc(f.p.title)+(f.p.optional?' (optional)':'')+'</b>'+(f.det?'<small>'+esc(f.det)+'</small>':'')+(st?'<small>'+st+'</small>':'')+'<button type="button" class="primary" data-calopen="'+CAL.pick+'">Open this day</button>'+(mvCanSrc(d)?'<button type="button" data-mv="from" data-d="'+CAL.pick+'">Move this session</button>':'')+'</div>'}
   return nav+h+leg+det}
