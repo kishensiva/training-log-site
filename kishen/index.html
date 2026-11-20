@@ -2311,7 +2311,7 @@ body:not([data-view]) #xpc,body[data-view="today"] #xpc{display:none!important}
 .foldb{background:none;border:0;padding:0;min-height:44px}
 .foldb .chev{color:var(--muted);font-size:18px;flex:none}
 #quests.folded>:not(.foldb),#tellc.folded>:not(.foldb){display:none!important}
-#tellc>h2{display:none}
+#tellc>h2{display:none}#tellc[hidden]{display:none!important}
 .rotc small{display:block;font-size:13px;opacity:.8;margin-top:2px}
 .rotc .rotb{margin-top:8px}
 #view-today[data-day="rest"] #ready>.head,#view-today[data-day="rest"] #q-quick,#view-today[data-day="rest"] #feelsum{display:none!important}
@@ -6067,7 +6067,7 @@ function odyCtx(){const L=[],t=today,ws=wkStart(t),w=weekOf(t);
 
 /* ---------- UI ---------- */
 const ODY_CHIPS=[['Lighter today','I feel weak today, make it lighter'],['Make it Express','Make today Express'],['My progress','How are my main lifts progressing over the last month?'],['Protein today','How much protein should I aim for today, and easy ways to get it?'],['Move to tomorrow','Move today\'s session to tomorrow']];
-function odyFab(){const f=$('odyFab');if(!f)return;const show=odyOn&&view==='today'&&!ODY.open&&!['live','feedback','night'].includes(mode)&&!$('gym');f.hidden=!show;if(show)odyTuck()}
+function odyFab(){{const t=$('tellc');if(t)t.hidden=!!odyOn}const f=$('odyFab');if(!f)return;const show=odyOn&&view==='today'&&!ODY.open&&!['live','feedback','night'].includes(mode)&&!$('gym');f.hidden=!show;if(show)odyTuck()}
 /* never on top of a control on the session card: shrink to the orb, or step aside until he scrolls */
 function odyTuck(){const f=$('odyFab');if(!f||f.hidden)return;f.classList.remove('tuck','gone');const q=f.getBoundingClientRect(),els=[...document.querySelectorAll('#view-today button,#view-today a[href],#view-today input,#view-today select,#session .tomrow')].filter(b=>b!==f&&!f.contains(b));   /* 20 Nov: any button on Today, not just the session card's (it sat on the Recovery button) */
   const hit=a=>els.some(b=>{const r=b.getBoundingClientRect();return r.width>0&&r.bottom>a.top-6&&r.top<a.bottom+6&&r.right>a.left-6&&r.left<a.right+6});
@@ -6292,7 +6292,9 @@ try{
   function tell(){const t=$('tellc');if(!t)return;const b=t.querySelector('.foldb');if(!b||b.dataset.ody)return;
     b.dataset.ody='1';const h=b.onclick;b.onclick=e=>{if(odyOn){e.preventDefault();odyOpen()}else if(h)h.call(b,e)};
     const s=b.querySelector('small');if(s&&odyOn)s.textContent='Notes, aches, food, plan changes · opens Odysseus'}
-  function relabel(){const t=$('tellc');const b=t&&t.querySelector('.foldb');if(!b||!odyOn)return;const s=b.querySelector('small');if(s)s.textContent='Notes, aches, food, plan changes · opens Odysseus'}
+  /* 20 Nov (his call, keep it simple): with Odysseus working, the Tell your coach card is a second door to the same chat, so it hides;
+        Ask Odysseus is the one way in. If Odysseus can't load, the card (the old note box) shows as before. */
+  function relabel(){const t=$('tellc');if(t)t.hidden=!!odyOn;const b=t&&t.querySelector('.foldb');if(!b||!odyOn)return;const s=b.querySelector('small');if(s)s.textContent='Notes, aches, food, plan changes · opens Odysseus'}
   const rs=renderSession;renderSession=function(){const r=rs.apply(this,arguments);try{fold()}catch(e){}try{tell();relabel()}catch(e){}return r};
   if(typeof tidyToday==='function'){const tt=tidyToday;tidyToday=function(){const r=tt.apply(this,arguments);try{tell();relabel()}catch(e){}return r}}
   try{if(cur)renderSession()}catch(e){}
