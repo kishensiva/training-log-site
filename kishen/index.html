@@ -5988,7 +5988,7 @@ function odyCtx(){const L=[],t=today,ws=wkStart(t),w=weekOf(t);
 const ODY_CHIPS=[['Lighter today','I feel weak today, make it lighter'],['Make it Express','Make today Express'],['My progress','How are my main lifts progressing over the last month?'],['Protein today','How much protein should I aim for today, and easy ways to get it?'],['Move to tomorrow','Move today\'s session to tomorrow']];
 function odyFab(){const f=$('odyFab');if(!f)return;const show=odyOn&&view==='today'&&!ODY.open&&!['live','feedback','night'].includes(mode)&&!$('gym');f.hidden=!show;if(show)odyTuck()}
 /* never on top of a control on the session card: shrink to the orb, or step aside until he scrolls */
-function odyTuck(){const f=$('odyFab');if(!f||f.hidden)return;f.classList.remove('tuck','gone');const q=f.getBoundingClientRect(),els=[...document.querySelectorAll('#session .hero button,#session .hero a,#session .tomrow')];
+function odyTuck(){const f=$('odyFab');if(!f||f.hidden)return;f.classList.remove('tuck','gone');const q=f.getBoundingClientRect(),els=[...document.querySelectorAll('#view-today button,#view-today a[href],#view-today input,#view-today select,#session .tomrow')].filter(b=>b!==f&&!f.contains(b));   /* 20 Nov: any button on Today, not just the session card's (it sat on the Recovery button) */
   const hit=a=>els.some(b=>{const r=b.getBoundingClientRect();return r.width>0&&r.bottom>a.top-6&&r.top<a.bottom+6&&r.right>a.left-6&&r.left<a.right+6});
   if(hit(q))f.classList.add(hit({top:q.top,bottom:q.bottom,left:q.right-52,right:q.right})?'gone':'tuck')}
 addEventListener('scroll',()=>{if(!odyOn)return;cancelAnimationFrame(window._odyT);window._odyT=requestAnimationFrame(odyTuck)},{passive:true});addEventListener('resize',()=>{odyTuck();odyVV()});
