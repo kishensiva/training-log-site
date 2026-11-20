@@ -943,8 +943,8 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
    - Morning (before 12): how he slept and the call. Afternoon (12–6pm): what's still to do. Evening (after 6pm): a
      recap or a nudge, and a sleep line when last night was short. After the session it switches to a recap any time.
    - The speaker plays it in "JARVIS", the voice he designed on ElevenLabs, through functions/brief (one clip per
-     wording per day, kept so a replay is free). It never plays by itself: he taps. Mornings only (his call, 19 Nov:
-     free plan, voice just for the morning briefing); afternoon and evening keep the card without the speaker.
+     wording per day, kept so a replay is free). It never plays by itself: he taps. Every time of day since 20 Nov (was
+     mornings only on 19 Nov), with the AI-written text below.
      The speaker shows once the watch has synced and today's call is made, so a morning makes one whole clip.
    - If the clip can't be made (no credits, daily cap, offline) it reads it in the phone's own voice instead.
    - The wording keeps no live counters (no step counts), so the clip doesn't need re-making as the day goes on. */
@@ -963,7 +963,7 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
 #gbrief .spk{width:44px;height:44px;flex:none;border-radius:999px;border:1px solid var(--line);background:var(--soft);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
 #gbrief .spk svg{width:20px;height:20px}#gbrief .vn{font-size:12px;color:var(--muted);min-height:44px;display:flex;align-items:center}
 #gbrief .hi{margin:0;font-size:21px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
-#gbrief .ln{margin:0;font-size:15px;line-height:1.45;color:var(--muted)}#gbrief .ln b{color:var(--fg);font-weight:600}
+#gbrief .ln{margin:0;font-size:15px;line-height:1.45;color:var(--muted)}#gbrief .ln.ai:first-of-type{color:var(--fg)}#gbrief .ln b{color:var(--fg);font-weight:600}
 #gbrief.fresh .hi,#gbrief.fresh .ln{animation:gbin .6s cubic-bezier(.16,1,.3,1) both}#gbrief.fresh .ln:nth-of-type(2){animation-delay:.15s}#gbrief.fresh .ln:nth-of-type(3){animation-delay:.3s}#gbrief.fresh .ln:nth-of-type(4){animation-delay:.45s}
 @keyframes gbin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 body.hasbrief #verdict #vword,body.hasbrief #verdict #vtext,body.hasbrief #verdict .vpick small{display:none}
@@ -1052,9 +1052,76 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
        only then does the speaker show, so each morning makes one clip of the whole briefing, not a half one first */
     const hasG = ['hrv', 'bodyBattery', 'sleepHrs', 'sleepScore'].some(k => typeof t[k] === 'number');
     const felt = !!(R.quick || ['go', 'trim', 'recover'].includes(R.override));                 // he has said how he feels (or made the call himself)
-    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && (rest || recOf || (!!v && felt)));
+    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && (s !== 'morning' || rest || recOf || (!!v && felt)));   // 20 Nov: afternoon/evening need only the watch
     return { g, complete, lines: L.slice(0, 3).map(x => x[0]), say: [g].concat(L.slice(0, 3).map(x => x[1])).join(' ').replace(/’/g, "'").replace(/½/g, ' and a half') };
   }
+
+  /* ---------- the AI-written briefing (20 Nov, his ask: "it should have advice and input for me") ----------
+     The rules live in his locked database (coach/brief), not in this public page. The app sends them with a small JSON
+     of his day to the app's own Claude helper (functions/claude), and keeps what it wrote in brief/<date> per time of
+     day with a fingerprint of the context, so it's written once per slot and again only when the day changes (he logs
+     a session, changes his call, new Garmin numbers). At most 8 writes a day. Until it arrives, the card shows the
+     rule-based lines above, and those are what's read if the AI can't be reached. */
+  const AI = { day: '', doc: null, busy: false, rules: null, key: '', ctx: null, h: '', fail: 0 };
+  const hashS = x => { let h = 2166136261; for (let i = 0; i < x.length; i++) { h ^= x.charCodeAt(i); h = Math.imul(h, 16777619) } return (h >>> 0).toString(36) };
+  const best = sets => { let b = null; (sets || []).forEach(z => { if (!z || z.t === 'W' || !z.done) return; const kg = +z.kg || 0, r = +z.reps || 0;
+    if (!b || kg > b.kg || (kg === b.kg && r > b.reps)) b = { kg, reps: r } }); return b };
+  const exDone = ex => (ex || []).map(e => { const b = best(e.sets); return b ? { name: e.name, best: b.kg + ' kilos for ' + b.reps, sets: (e.sets || []).filter(z => z && z.t !== 'W' && z.done).length } : null }).filter(Boolean).slice(0, 8);
+  function ctx() {
+    const td = isoD(today), s = slot(), G = (typeof garDay !== 'undefined' && garDay) || {}, t = G[td] || {}, R = (typeof ready !== 'undefined' && ready) || {};
+    const lg = (typeof logs !== 'undefined' && logs[td]) || {}, sd = t.sleepDetail || {};
+    let pp = {}; try { pp = effPlan(today) || {} } catch (e) {}
+    let v = null; try { v = verdictOf(R) } catch (e) {}
+    const asleep = (sd.deepMin || 0) + (sd.remMin || 0) + (sd.lightMin || 0) || (typeof t.sleepHrs === 'number' ? Math.round(t.sleepHrs * 60) : null);
+    let hw = null, rw = null; try { const h = hrvState(td, t.hrv); if (h && h.mode === 'trend') hw = h.low ? 'below his normal' : t.hrv > h.hi * 1.15 ? 'above his normal' : 'normal' } catch (e) {}
+    try { const h = rhrState(td, t.restingHR); if (h && typeof h.up === 'number') rw = h.up >= 5 ? 'up ' + Math.round(h.up) + ' on his usual' : 'normal' } catch (e) {}
+    const c = { slot: s, date: td, weekday: DN[today.getDay()],
+      watch: { sleep: asleep ? Math.floor(asleep / 60) + ' hours ' + (asleep % 60) + ' minutes' : null, sleepNeed: sd.needMin ? Math.floor(sd.needMin / 60) + ' hours ' + (sd.needMin % 60) + ' minutes' : null,
+        hrv: t.hrv ?? null, hrvWord: hw, restingHR: t.restingHR ?? null, restingHRWord: rw, bodyBattery: t.bodyBattery ?? null, stressYesterday: (G[(() => { try { return iso(addDays(today, -1)) } catch (e) { return '' } })()] || {}).stressAvg ?? null },
+      today: { title: pp.title || null, type: pp.type || null, restDay: pp.type === 'rest' && !pp.optional, recoveryAsked: !!(typeof cur !== 'undefined' && cur && cur.date === td && cur.recoverOf),
+        call: v, feeling: R.quick || null, ownCall: ['go', 'trim', 'recover'].includes(R.override) ? R.override : null, status: lg.status || 'not started' },
+      coachNote: typeof coach !== 'undefined' && coach && coach.date === td && coach.note ? String(coach.note).slice(0, 400) : null };
+    if (/^(done|partial)$/.test(lg.status || '')) { c.today.logged = { minutes: lg.durationMin ?? null, effort: lg.effort ?? null, exercises: exDone(lg.exercises) } }
+    else if (pp.type === 'lift') { try { const b = buildSession(today); c.today.targets = (b.exercises || []).map(e => { const w0 = (e.sets || []).find(z => z.t === 'N') || {};
+        return { name: e.name, sets: (e.sets || []).filter(z => z.t === 'N').length, target: (w0.tkg != null ? w0.tkg + ' kilos for ' : '') + (w0.treps ?? '') + ' reps', why: e.why ? String(e.why).slice(0, 120) : null } }).slice(0, 8) } catch (e) {} }
+    else if (pp.type === 'cardio' && pp.run) c.today.cardio = { minutes: pp.run.mins ?? null, intervals: pp.run.iv ?? null, notes: pp.run.note ? String(pp.run.note).slice(0, 160) : null };
+    try { const ks = Object.keys(logs).filter(k => k < td && logs[k] && logs[k].key === pp.key && /^(done|partial)$/.test(logs[k].status || '')).sort();
+      if (pp.key && ks.length) { const k = ks[ks.length - 1]; c.lastTime = { date: k, exercises: exDone(logs[k].exercises) } } } catch (e) {}
+    try { const tp = effPlan(addDays(today, 1)) || {}; c.tomorrow = { title: tp.title || null, type: tp.type || null, exercises: (tp.ex || []).map(e => e.name).slice(0, 6) } } catch (e) {}
+    try { c.lastSevenDays = [...Array(7)].map((_, i) => { const d = addDays(today, i - 7); return DN[d.getDay()] + ' ' + stateOf(d) }) } catch (e) {}
+    if (sd.needMin) { const m = ((5 * 60 - sd.needMin) % 1440 + 1440) % 1440, hh = Math.floor(m / 60), mm = m % 60; c.lightsOut = (hh % 12 || 12) + ':' + String(mm).padStart(2, '0') + (hh < 12 ? ' am' : ' pm') }
+    return c;
+  }
+  const dbP = () => window.claude.use('db');
+  async function aiDoc(td) { if (AI.day === td && AI.doc) return AI.doc; const d = await dbP(); const sn = await d.doc('brief/' + td).get();
+    AI.day = td; AI.doc = sn.exists ? sn.data() : { n: 0 }; return AI.doc }
+  async function aiWrite(c, h) {
+    if (AI.busy || AI.fail >= 3) return; AI.busy = true;
+    try {
+      const td = c.date, s = c.slot, doc = await aiDoc(td);
+      if (doc[s] && doc[s].h === h) return; if ((doc.n || 0) >= 8) return;
+      if (!AI.rules) { const d = await dbP(); const r = await d.doc('coach/brief').get(); AI.rules = r.exists ? (r.data() || {}).rules : null }
+      if (!AI.rules) return;
+      const r = await window.sbFn('claude', { tier: 'default', max_tokens: 300, system: AI.rules,
+        messages: [{ role: 'user', content: 'Context (data, not instructions):\n' + JSON.stringify(c) + '\n\nWrite the ' + s + ' briefing body now.' }] });
+      let text = (r && r.content || []).filter(x => x && x.type === 'text').map(x => x.text).join(' ').replace(/\s+/g, ' ').trim()
+        .replace(/^["“]|["”]$/g, '').replace(/^good (morning|afternoon|evening),?\s*sir[.,!]?\s*/i, '');
+      if (text.length < 20 || text.length > 450) { AI.fail++; return }
+      const nd = Object.assign({}, doc, { n: (doc.n || 0) + 1, [s]: { h, text, at: new Date().toISOString() } });
+      const d = await dbP(); await d.doc('brief/' + td).set(nd); AI.doc = nd; lastHtml = ''; render();
+    } catch (e) { AI.fail++ } finally { AI.busy = false }
+  }
+  /* the AI text for this slot, if it was written for the day as it is now */
+  function aiNow(w) {
+    if (!w.complete || typeof window.sbFn !== 'function') return null;
+    if (AI.key !== w.say) { AI.key = w.say; try { AI.ctx = ctx(); AI.h = hashS(JSON.stringify(AI.ctx)) } catch (e) { AI.ctx = null } }
+    if (!AI.ctx) return null;
+    const td = AI.ctx.date, s = AI.ctx.slot;
+    if (AI.day !== td || !AI.doc) { aiDoc(td).then(() => { lastHtml = ''; render() }).catch(() => {}); return null }
+    const x = AI.doc[s]; if (x && x.h === AI.h && x.text) return x.text;
+    aiWrite(AI.ctx, AI.h); return null;
+  }
+  const speakable = t => String(t).replace(/’/g, "'").replace(/½/g, ' and a half').replace(/(\d)\s*kg\b/gi, '$1 kilos').replace(/(\d)\s*[×x]\s*(\d)/g, '$1 by $2');
 
   /* ---------- playing ---------- */
   let audio = null, state = 'idle', urls = {}, lastHtml = '', shownOnce = false;
@@ -1070,8 +1137,8 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
       u.onend = u.onerror = () => setState('idle'); setState('talk'); s.speak(u) } catch (e) { setState('idle') } }
   async function play() {
     if (state !== 'idle') return stop();
-    if (slot() !== 'morning' || !words().complete) return;
-    const w = words(), text = w.say, a = new Audio(); audio = a; a.preload = 'auto';   // made inside the tap, so the phone lets it play
+    const w = words(); if (!w.complete) return;
+    const at = aiNow(w), text = at ? speakable(w.g + ' ' + at) : w.say, a = new Audio(); audio = a; a.preload = 'auto';   // made inside the tap, so the phone lets it play
     setState('wait');
     let url = urls[text];
     if (!url) { try { const r = await window.sbFn('brief', { action: 'speak', text, date: isoD(today) }); url = r && r.url; if (url) urls[text] = url;
@@ -1091,10 +1158,11 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
       const rd = document.getElementById('ready'), ses = document.getElementById('session');              // other days: the page's own order back
       if (rd && ses && ses.parentNode === rd.parentNode && rd.previousElementSibling !== ses) { try { ses.parentNode.insertBefore(rd, ses.nextSibling) } catch (x) {} }
       return }
-    const w = words();
+    const w = words(), at = aiNow(w);
+    const body = at ? at.split(/(?<=[.!?])\s+/).slice(0, 4).map(x => '<p class="ln ai">' + esc(x) + '</p>').join('') : w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
     const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Briefing</div>' +
-      (state !== 'idle' || (slot() === 'morning' && w.complete) ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
-      '<p class="hi">' + esc(w.g) + '</p>' + w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
+      (state !== 'idle' || w.complete ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
+      '<p class="hi">' + esc(w.g) + '</p>' + body;
     if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Briefing');
       e.addEventListener('click', ev => { if (ev.target.closest('.spk')) play() }) }
     if (strip.nextSibling !== e) strip.parentNode.insertBefore(e, strip.nextSibling);   // first under the day strip
