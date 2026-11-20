@@ -936,7 +936,8 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
 })();
 
 </script><script>
-/* Spoken briefing, JARVIS style (19 Nov 2026, Kishen's app only).
+/* Spoken briefing (19 Nov 2026, Kishen's app only). Since 20 Nov it's Odysseus's briefing, spoken in the JARVIS voice
+   (his call: one assistant, Odysseus, with JARVIS as its voice).
    - A short card above "Your body today": "Good morning/afternoon/evening, sir." plus two or three lines written from
      his own numbers (on screen in words, since the tiles below show the numbers; the voice reads the numbers) (Garmin sleep, HRV, resting HR, body battery), the day's plan and the morning call
      (Go full / Trim / Recovery, his own pick wins), and whether today's session is logged.
@@ -1132,7 +1133,7 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
   let audio = null, state = 'idle', urls = {}, lastHtml = '', shownOnce = false;
   const el = () => document.getElementById('gbrief');
   function setState(s) { state = s; const e = el(); if (!e) return; e.classList.toggle('talk', s === 'talk'); e.classList.toggle('wait', s === 'wait');
-    const b = e.querySelector('.spk'); if (b) { b.innerHTML = s === 'idle' ? SPK : STOP; b.setAttribute('aria-label', s === 'idle' ? 'Hear the briefing' : 'Stop the briefing') } }
+    const b = e.querySelector('.spk'); if (b) { b.innerHTML = s === 'idle' ? SPK : STOP; b.setAttribute('aria-label', s === 'idle' ? 'Hear Odysseus' : 'Stop Odysseus') } }
   function stop() { try { if (audio) { audio.pause(); audio.src = '' } } catch (e) {} try { speechSynthesis.cancel() } catch (e) {} audio = null; setState('idle') }
   function phoneVoice(text) {
     try { const s = window.speechSynthesis; if (!s) return setState('idle'); s.cancel();
@@ -1165,10 +1166,10 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
       return }
     const w = words(), at = aiNow(w);
     const body = at ? at.split(/(?<=[.!?])\s+/).slice(0, 4).map(x => '<p class="ln ai">' + esc(x) + '</p>').join('') : w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
-    const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Briefing</div>' +
-      (state !== 'idle' || w.complete ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
+    const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Odysseus · briefing</div>' +
+      (state !== 'idle' || w.complete ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear Odysseus' : 'Stop Odysseus') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
       '<p class="hi">' + esc(w.g) + '</p>' + body;
-    if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Briefing');
+    if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Odysseus briefing');
       e.addEventListener('click', ev => { if (ev.target.closest('.spk')) play() }) }
     if (strip.nextSibling !== e) strip.parentNode.insertBefore(e, strip.nextSibling);   // first under the day strip
     /* 19 Nov: the check-in comes straight after the briefing (the voice waits for it), then the session card;
