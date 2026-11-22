@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff6fa"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#120f14"><style>html{background:#fff6fa}@media (prefers-color-scheme: dark){html{background:#120f14}}</style><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Hyrox Log"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script>window.WEB_APP="eleanor";window.WEB_TITLE="Eleanor's Hyrox Log";window.SB_URL="https://ytjufveigsdullzlwqlh.supabase.co";window.SB_KEY="sb_publishable_Bo8w_rjk-nQpxSXgE1ctWA_xCvFa6pq";</script><script>
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff6fa"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="#120f14"><style>html{background:#fff6fa}@media (prefers-color-scheme: dark){html{background:#120f14}}</style><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Ody"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script><script>window.WEB_APP="eleanor";window.WEB_TITLE="Ody";window.SB_URL="https://ytjufveigsdullzlwqlh.supabase.co";window.SB_KEY="sb_publishable_Bo8w_rjk-nQpxSXgE1ctWA_xCvFa6pq";</script><script>
 /* Opening intro (19 Nov 2026, Kishen's design: dots drift in and connect while the app loads, Apple-Wallet-style
    lettering, then today's session card slides up into place). Kishen's web app, and Eleanor's from 19 Nov (her pink, her AI Kishen's words).
    - Fresh opens only: a page load (the phone closes the app overnight, so the morning open counts), not switching back
@@ -290,27 +290,58 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   let dbP = null, uid = null;
 
   /* 2. sign-in screen */
-  const css = `.wsg{position:fixed;inset:0;z-index:99;display:grid;place-items:center;padding:24px;background:var(--bg,#0b0f17);color:var(--fg,#eef1f6);font-family:var(--body,system-ui,sans-serif)}
-  .wsg form,.wsg .bx{width:100%;max-width:360px;display:flex;flex-direction:column;gap:12px}
-  .wsg h1{margin:0 0 4px;font-family:var(--display,inherit);font-size:30px;line-height:1.05}
-  .wsg p{margin:0;color:var(--muted,#97a2b4);font-size:15px;line-height:1.45}
-  .wsg label{display:flex;flex-direction:column;gap:6px;font-size:14px;color:var(--muted,#97a2b4)}
-  .wsg input{font:inherit;font-size:17px;color:inherit;background:var(--card,#141a24);border:1px solid var(--line,#2a3242);border-radius:12px;padding:12px 14px;min-height:48px}
-  .wsg button{font:inherit;font-size:17px;font-weight:700;min-height:52px;border-radius:14px;border:1px solid var(--line,#2a3242);background:var(--card,#141a24);color:inherit}
-  .wsg button.go{background:var(--accent,#5f87ff);border-color:var(--accent,#5f87ff);color:#fff}
-  .wsg .m{min-height:20px;font-size:14px}.wsg .m.err{color:var(--miss,#ff5c6a)}.wsg .m.ok{color:var(--done,#3dd598)}
-  .wsg .lk{background:none;border:none;min-height:40px;font-size:15px;font-weight:600;color:var(--accent,#5f87ff)}`;
+  /* 22 Nov 2026 (Kishen's call, "serious, not cartoonish"): Ody's sign-in screens. Near-black navy sky, faint stars, one soft glow;
+     the emblem is a fine-line navigation ring (degree ticks, like an astrolabe: the voyage) around Odysseus's bow and arrow
+     (the bow only he could string), drawn in thin silver lines with one coral tip. Both apps. */
+  const EMBLEM = (() => {
+    let t = '';
+    for (let i = 0; i < 72; i++) {                       // a tick every 5°, longer every 30°
+      const a = i * 5 * Math.PI / 180, long = i % 6 === 0, r1 = 88, r2 = long ? 80 : 84;
+      t += `<line x1="${(100 + r1 * Math.sin(a)).toFixed(1)}" y1="${(100 - r1 * Math.cos(a)).toFixed(1)}" x2="${(100 + r2 * Math.sin(a)).toFixed(1)}" y2="${(100 - r2 * Math.cos(a)).toFixed(1)}" stroke-width="${long ? 1.4 : .8}"/>`;
+    }
+    return `<svg class="wsg-em" viewBox="0 0 200 200" aria-hidden="true" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="100" cy="100" r="92" stroke="#cfd8ea" stroke-opacity=".55" stroke-width=".9"/>
+      <g stroke="#cfd8ea" stroke-opacity=".7">${t}</g>
+      <circle cx="100" cy="100" r="74" stroke="#cfd8ea" stroke-opacity=".35" stroke-width=".9"/>
+      <path d="M100 4 l3 6 h-6z" fill="#e7704f" stroke="none"/>
+      <g transform="rotate(135 100 100)">
+        <path d="M92 50 C74 60 70 76 77 100 C70 124 74 140 92 150" stroke="#e6ecf7" stroke-width="2.6"/>
+        <path d="M92 50 q5 -1 7 -6 M92 150 q5 1 7 6" stroke="#e6ecf7" stroke-width="2"/>
+        <path d="M93 51 L118 100 L93 149" stroke="#cfd8ea" stroke-opacity=".75" stroke-width="1"/>
+        <path d="M120 100 H58" stroke="#e6ecf7" stroke-width="1.6"/>
+        <path d="M56 100 l9 -5 v10z" fill="#e7704f" stroke="#e7704f" stroke-width="1"/>
+        <path d="M120 100 l6 -5 M120 100 l6 5 M114 100 l6 -5 M114 100 l6 5" stroke="#cfd8ea" stroke-width="1.1"/>
+      </g>
+      <g fill="#e6ecf7" stroke="none"><circle cx="64" cy="62" r="1.1"/><circle cx="140" cy="132" r=".9"/><circle cx="58" cy="128" r=".8"/></g></svg>`;
+  })();
+  const css = `.wsg{position:fixed;inset:0;z-index:99;display:grid;place-items:center;padding:24px;overflow:auto;color:#e6ecf7;color-scheme:dark;font-family:var(--body,system-ui,sans-serif);
+    background:radial-gradient(90% 45% at 50% 108%,rgba(70,110,220,.22),transparent 70%),linear-gradient(180deg,#0a0f24 0%,#070a1a 60%,#05070f 100%)}
+  .wsg::before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.45;background-image:radial-gradient(1px 1px at 22px 34px,#fff,transparent),radial-gradient(.8px .8px at 140px 90px,#dfe8ff,transparent),radial-gradient(1px 1px at 200px 160px,#fff,transparent),radial-gradient(.8px .8px at 80px 190px,#fff,transparent);background-size:260px 260px}
+  .wsg form,.wsg .bx{position:relative;width:100%;max-width:340px;display:flex;flex-direction:column;gap:12px}
+  .wsg .wsg-em{width:124px;height:124px;align-self:center;margin:0 0 6px}
+  .wsg h1{margin:0 0 2px;font-size:22px;line-height:1.2;font-weight:600;text-align:center;text-transform:none;letter-spacing:.01em;color:#e6ecf7}
+  .wsg h1.wm{font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;font-size:30px;font-weight:400;letter-spacing:.5em;text-indent:.5em;text-transform:uppercase}
+  .wsg h1+p{text-align:center;margin-bottom:10px}
+  .wsg p{margin:0;color:#8e99bb;font-size:15px;line-height:1.5}.wsg p b{color:#e6ecf7;font-weight:600}
+  .wsg label{display:flex;flex-direction:column;gap:6px;font-size:13px;letter-spacing:.02em;color:#8e99bb}
+  .wsg input{font:inherit;font-size:17px;color:#e6ecf7;background:#0d1330;border:1px solid #232c52;border-radius:10px;padding:12px 14px;min-height:50px;outline:none}
+  .wsg input:focus{border-color:#8aa2e8}
+  .wsg button{font:inherit;font-size:16px;font-weight:600;min-height:50px;border-radius:10px;border:1px solid #2a3460;background:transparent;color:#e6ecf7;letter-spacing:.02em}
+  .wsg button.go{background:#e6ecf7;border-color:#e6ecf7;color:#0a0f24}
+  .wsg button.go:disabled{opacity:.6}
+  .wsg .m{min-height:20px;font-size:14px;text-align:center}.wsg .m.err{color:#f08a8a}.wsg .m.ok{color:#8fd8b0}
+  .wsg .lk{background:none;border:none;min-height:40px;font-size:14px;font-weight:500;color:#9fb2e3}`;
   function overlay(html) {
     let o = document.getElementById('wsg');
     if (!o) { const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); o = document.createElement('div'); o.id = 'wsg'; o.className = 'wsg'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); document.body.appendChild(o) }
-    o.innerHTML = html; return o;
+    o.innerHTML = html; const f = o.querySelector('form,.bx'); if (f) f.insertAdjacentHTML('afterbegin', EMBLEM); return o;
   }
   const close = () => { const o = document.getElementById('wsg'); if (o) o.remove() };
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   function signInScreen(note, noteKind, forceIn) {
     return new Promise(res => {
-      const o = overlay(`<form id="wsgF" novalidate><h1>${esc(TITLE)}</h1><p id="wsgH">Sign in to load your training.</p>
+      const o = overlay(`<form id="wsgF" novalidate><h1 class="wm">${esc(TITLE)}</h1><p id="wsgH">Sign in to load your training.</p>
         <label>Email<input id="wsgE" type="email" autocomplete="username" inputmode="email" required></label>
         <label>Password<input id="wsgP" type="password" autocomplete="current-password" minlength="8" required></label>
         <button class="go" id="wsgGo" type="submit">Sign in</button>
@@ -1247,7 +1278,7 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
   document.addEventListener('visibilitychange', () => { if (document.hidden) stop() });
 })();
 
-</script></head><body><title>Eleanor's Hyrox Log</title>
+</script></head><body><title>Ody</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Big+Shoulders+Display:wght@600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
 <style>
 :root{--bg:#080b11;--card:#11161f;--fg:#eef1f6;--muted:#8e99ac;--line:#222a39;--soft:#192030;--accent:#6f93ff;--accent-soft:#162142;--done:#3dd598;--done-soft:#0e2a20;--warn:#f5c542;--warn-soft:#2c2410;--miss:#ff5c6a;--miss-soft:#35161b;--plate-r:#ff4a57;--plate-b:#5584ff;--plate-y:#f5c542;--plate-g:#35c584;--plate-w:#dfe4ec;--display:"Big Shoulders Display","Barlow Condensed","Arial Narrow",system-ui,sans-serif;--body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark}
