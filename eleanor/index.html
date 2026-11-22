@@ -414,6 +414,28 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     });
   }
 
+  /* 22 Nov (Kishen: "no place to sign out"): a footer at the end of Progress, on every tab, with the signed-in email and Sign out.
+     A div, not a section, so the Progress tabs never hide it. It asks first; signing out brings back the sign-in screen. */
+  function signOutRow(email) {
+    const add = () => {
+      const v = document.getElementById('view-prog'); if (!v) return void setTimeout(add, 500);
+      if (document.getElementById('wsgOut')) return;
+      const d = document.createElement('div'); d.id = 'wsgOut';
+      d.style.cssText = 'margin:28px 0 8px;padding:14px 2px 0;border-top:1px solid var(--line,#2a3242);display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:var(--muted,#8e99bb)';
+      d.innerHTML = `<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Signed in as <b style="color:var(--fg,inherit);font-weight:600">${esc(email || '')}</b></span>` +
+        '<button type="button" id="wsgOutB" style="flex:none;font:inherit;font-size:14px;font-weight:600;min-height:40px;padding:0 16px;border-radius:10px;border:1px solid var(--line,#2a3242);background:transparent;color:var(--fg,inherit)">Sign out</button>';
+      v.appendChild(d);
+      /* cards added later (e.g. Notifications) go above it: keep it last */
+      try { new MutationObserver(() => { if (v.lastElementChild !== d) v.appendChild(d) }).observe(v, { childList: true }) } catch (e) {}
+      d.querySelector('#wsgOutB').onclick = async () => {
+        if (!confirm('Sign out of Ody on this phone?')) return;
+        try { await sb.auth.signOut() } catch (e) {}
+        location.reload();
+      };
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+  }
+
   /* 3. is this login the owner of this app? (Kishen links each login to its app once, in the database) */
   async function owns() { const { data, error } = await sb.from('apps').select('app').eq('app', APP).maybeSingle(); if (error) throw error; return !!data }
   /* an invited login links itself the first time (the invite holds the email Kishen gave; confirmed logins only) */
@@ -486,6 +508,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
       }
     }
     uid = session.user.id; close(); try { (window.__realStorage || localStorage).setItem('webSeen:' + APP, '1') } catch (e) {}
+    signOutRow(session.user.email);
     const db = makeSbDb(sb, APP);
     try { await maybeImport(db) } catch (e) {} close();
     sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') location.reload() });
@@ -628,7 +651,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
 (function () {
   const APP = window.WEB_APP, VAPID = 'BHkoprFoefKte0t8KQWJ9t9q1FRBZboLuCiE8Dfi7Fd5NjpALfHlq5xsfOvIC0hXGND1IQRbsyQNYhNQUcyDlSM';
   if (APP !== 'kishen' && APP !== 'eleanor') return;
-  const ELLE = APP === 'eleanor', NAME = ELLE ? 'Hyrox Log' : 'Training Log';
+  const ELLE = APP === 'eleanor', NAME = 'Ody';   // 22 Nov: both apps are called Ody
   const HIST = window.history;   /* the apps' own function history() (past sets) hides window.history once the page runs */
   const OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const ls = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} } };
