@@ -23,7 +23,7 @@
     elle: LIGHT ? [[232, 70, 150], [150, 90, 220]] : [[255, 134, 194], [170, 130, 255]] };
 
   let last = 0; try { last = +sessionStorage.getItem('introAt') || 0 } catch (e) {}
-  const play = animOn() && Date.now() - last > 10 * 60e3 && !/[?&]nointro/.test(location.search);
+  const play = animOn() && Date.now() - last > 10 * 60e3 && !/[?&](nointro|reset=1)/.test(location.search);   /* not on a password-reset link: that screen should show straight away */
   if (play) run();
 
   function run() {
@@ -274,6 +274,16 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
     window.__realStorage = real;
   } catch (e) {}
 
+  /* a password-reset email link brings the person back to this page with ?reset=1, plus the sign-in token in the #hash
+     (or an error there when the link is old or already used). Read it before the database library tidies the address. */
+  const pageUrl = () => location.href.split('#')[0].split('?')[0];
+  const RESET = (() => { try { const q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.replace(/^#/, ''));
+    if (q.get('reset') !== '1' && h.get('type') !== 'recovery') return '';
+    return h.get('error') || h.get('error_code') ? 'bad' : 'ok' } catch (e) { return '' } })();
+  /* the apps declare their own function history() (past sets), which hides window.history once the page script runs: keep the browser's one */
+  const HIST = window.history;
+  const dropReset = () => { try { HIST.replaceState(null, '', pageUrl()) } catch (e) {} };
+
   const sb = window.supabase && window.supabase.createClient(URL0, KEY, {
     auth: { storageKey: 'sb-' + APP, storage: window.__realStorage || undefined, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
   });
@@ -298,24 +308,37 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   const close = () => { const o = document.getElementById('wsg'); if (o) o.remove() };
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  function signInScreen(note) {
+  function signInScreen(note, noteKind, forceIn) {
     return new Promise(res => {
       const o = overlay(`<form id="wsgF" novalidate><h1>${esc(TITLE)}</h1><p id="wsgH">Sign in to load your training.</p>
         <label>Email<input id="wsgE" type="email" autocomplete="username" inputmode="email" required></label>
         <label>Password<input id="wsgP" type="password" autocomplete="current-password" minlength="8" required></label>
         <button class="go" id="wsgGo" type="submit">Sign in</button>
+        <button class="lk" id="wsgFg" type="button">Forgot password?</button>
         <button class="lk" id="wsgNew" type="button">First time here? Create your account</button>
-        <p class="m" id="wsgM" role="status">${note ? esc(note) : ''}</p></form>`);
+        <p class="m${noteKind ? ' ' + noteKind : ''}" id="wsgM" role="status">${note ? esc(note) : ''}</p></form>`);
       const m = (t, c) => { const e = o.querySelector('#wsgM'); e.textContent = t; e.className = 'm' + (c ? ' ' + c : '') };
       /* first visit on this phone opens on Create account; after that, Sign in */
-      let mode = 'in'; try { if (!(window.__realStorage || localStorage).getItem('webSeen:' + APP)) mode = 'up' } catch (e) {}
+      let mode = 'in'; try { if (!forceIn && !(window.__realStorage || localStorage).getItem('webSeen:' + APP)) mode = 'up' } catch (e) {}
       const setMode = () => { o.querySelector('#wsgGo').textContent = mode === 'in' ? 'Sign in' : 'Create account';
+        o.querySelector('#wsgFg').hidden = mode !== 'in';
         o.querySelector('#wsgNew').textContent = mode === 'in' ? 'First time here? Create your account' : 'Already have an account? Sign in';
         o.querySelector('#wsgP').autocomplete = mode === 'in' ? 'current-password' : 'new-password';
         o.querySelector('#wsgH').textContent = mode === 'in' ? 'Sign in to load your training.' : 'Create your account: your email and a password (8+ characters).' };
       const seen = () => { try { (window.__realStorage || localStorage).setItem('webSeen:' + APP, '1') } catch (e) {} };
       setMode();
       o.querySelector('#wsgNew').onclick = () => { mode = mode === 'in' ? 'up' : 'in'; setMode(); m('') };
+      /* forgot password: Supabase emails a reset link back to this page. The reply is the same whether or not the email has an account. */
+      o.querySelector('#wsgFg').onclick = async () => {
+        const email = o.querySelector('#wsgE').value.trim();
+        if (!/^\S+@\S+\.\S+$/.test(email)) { m('Type your email above, then tap Forgot password? again.', 'err'); o.querySelector('#wsgE').focus(); return }
+        const b = o.querySelector('#wsgFg'); b.disabled = true; m('Sending a reset link…');
+        try {
+          const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: pageUrl() + '?reset=1' }); if (error) throw error;
+          m('If that email has an account, a reset link is on its way. Open it to choose a new password' + (IOS && STANDALONE ? ' (it opens in Safari), then come back here and sign in.' : '.'), 'ok');
+        } catch (e) { const t = String(e && e.message || e);
+          m(/rate|seconds|too many/i.test(t) ? 'A link was sent a moment ago. Check your email, or wait a minute and try again.' : /fetch|network/i.test(t) ? 'No connection. Try again when you have signal.' : t, 'err') }
+        finally { b.disabled = false } };
       o.querySelector('#wsgF').onsubmit = async ev => { ev.preventDefault();
         const email = o.querySelector('#wsgE').value.trim(), password = o.querySelector('#wsgP').value;
         if (!/^\S+@\S+\.\S+$/.test(email)) { m('Type the email you use for this app.', 'err'); return }
@@ -328,6 +351,35 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
         } catch (e) { const t = String(e && e.message || e);
           m(/Invalid login/i.test(t) ? 'That email and password don\'t match. Check both and try again.' : /not confirmed/i.test(t) ? 'Confirm your email first: open the link we sent you, then sign in.' : /fetch|network/i.test(t) ? 'No connection. Try again when you have signal.' : t, 'err') }
         finally { b.disabled = false } };
+    });
+  }
+
+  /* after a reset link: choose the new password (the link already signed this phone in) */
+  function newPasswordScreen() {
+    return new Promise(res => {
+      const o = overlay(`<form id="wsgF" novalidate><h1>New password</h1><p>Choose a new password for ${esc(TITLE)} (8+ characters).</p>
+        <label>New password<input id="wsgP" type="password" autocomplete="new-password" minlength="8" required></label>
+        <label>Type it again<input id="wsgP2" type="password" autocomplete="new-password" minlength="8" required></label>
+        <button class="go" id="wsgGo" type="submit">Save new password</button>
+        <p class="m" id="wsgM" role="status"></p></form>`);
+      const m = (t, c) => { const e = o.querySelector('#wsgM'); e.textContent = t; e.className = 'm' + (c ? ' ' + c : '') };
+      o.querySelector('#wsgF').onsubmit = async ev => { ev.preventDefault();
+        const p1 = o.querySelector('#wsgP').value, p2 = o.querySelector('#wsgP2').value;
+        if (p1.length < 8) { m('Use at least 8 characters.', 'err'); return }
+        if (p1 !== p2) { m('The two passwords don\'t match. Type them again.', 'err'); return }
+        const b = o.querySelector('#wsgGo'); b.disabled = true; m('Saving…');
+        try {
+          const { error } = await sb.auth.updateUser({ password: p1 }); if (error) throw error;
+          dropReset();
+          /* iPhone: the link opened Safari, which keeps its own sign-in; the Home Screen app needs the new password once */
+          if (IOS && !STANDALONE) {
+            const d = overlay(`<div class="bx"><h1>Password changed</h1><p>Now open the app from your Home Screen and sign in with your new password.</p><button class="lk" id="wsgC" type="button">Continue here in Safari</button></div>`);
+            d.querySelector('#wsgC').onclick = () => res();
+          } else res();
+        } catch (e) { const t = String(e && e.message || e);
+          m(/different from the old/i.test(t) ? 'That\'s your old password. Choose a new one.' : /fetch|network/i.test(t) ? 'No connection. Try again when you have signal.' : /expired|invalid|session/i.test(t) ? 'This reset link has expired. Close this, tap Forgot password? and use the new link.' : t, 'err');
+          b.disabled = false }
+      };
     });
   }
 
@@ -385,9 +437,13 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   async function start() {
     if (!sb) { overlay('<div class="bx"><h1>Can\'t load</h1><p>The app couldn\'t load its database library. Check your connection and reopen the app.</p></div>'); return null }
     let { data: { session } } = await sb.auth.getSession();
-    if (!session) await installFirst();
+    let note = '', noteKind = '', forceIn = false;
+    if (RESET === 'ok' && session) await newPasswordScreen();
+    else if (RESET) { dropReset(); forceIn = true; noteKind = 'err';
+      note = 'That reset link has expired or was already used. Type your email and tap Forgot password? for a new one.' }
+    if (!session && !RESET) await installFirst();
     for (;;) {
-      if (!session) session = await signInScreen();
+      if (!session) { session = await signInScreen(note, noteKind, forceIn); note = ''; noteKind = '' }
       try {
         if (await owns()) break;
         if (await claim() && await owns()) break;
@@ -503,7 +559,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
       try { const r = await fetch(URL0 + '/functions/v1/strava', { headers: { apikey: KEY } }); const j = await r.json(); if (!j.ready) return null } catch (e) { return null }
       await (dbP || window.claude.use('db'));
       try { const q = new URLSearchParams(location.search), s = q.get('strava');
-        if (s) { history.replaceState(null, '', location.pathname); setTimeout(() => { try { toast(s === 'connected' ? 'Strava connected' : s === 'declined' ? 'Strava wasn\'t connected' : 'Couldn\'t connect Strava. Try again.') } catch (e) {} }, 1500) } } catch (e) {}
+        if (s) { HIST.replaceState(null, '', location.pathname); setTimeout(() => { try { toast(s === 'connected' ? 'Strava connected' : s === 'declined' ? 'Strava wasn\'t connected' : 'Couldn\'t connect Strava. Try again.') } catch (e) {} }, 1500) } } catch (e) {}
       document.addEventListener('click', e => { if (stravaNeedsConnect && e.target.closest && e.target.closest('[data-stvgo]')) { e.stopImmediatePropagation(); e.preventDefault(); stravaConnect() } }, true);
       return { callTool: async (server, tool, args) => { if (server !== 'Strava') throw { code: 'server_not_connected' }; const j = await stravaPost({ action: 'call', tool, args }); stravaNeedsConnect = false; return { payload: j.payload } } };
     })());
@@ -542,6 +598,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   const APP = window.WEB_APP, VAPID = 'BHkoprFoefKte0t8KQWJ9t9q1FRBZboLuCiE8Dfi7Fd5NjpALfHlq5xsfOvIC0hXGND1IQRbsyQNYhNQUcyDlSM';
   if (APP !== 'kishen' && APP !== 'eleanor') return;
   const ELLE = APP === 'eleanor', NAME = ELLE ? 'Hyrox Log' : 'Training Log';
+  const HIST = window.history;   /* the apps' own function history() (past sets) hides window.history once the page runs */
   const OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const ls = { get: k => { try { return localStorage.getItem(k) } catch (e) { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch (e) {} } };
   const KINDS = ELLE ? [['morning', 'Morning plan', 'Today’s session at 6:45 am']] : [['morning', 'Morning plan', 'Today’s session at 6:45 am'], ['weekly', 'Weekly recap', 'Sunday at 8:15 pm']];
@@ -618,7 +675,7 @@ if (typeof module !== 'undefined') module.exports = { makeSbDb };
   db().then(d => { if (!d) return;
     card();
     /* a tapped weekly recap opens Progress → Coach */
-    try { const q = new URLSearchParams(location.search); if (q.get('open') === 'prog') { history.replaceState(null, '', location.pathname); setTimeout(() => { try { setPT('coach'); setView('prog') } catch (e) {} }, 600) } } catch (e) {}
+    try { const q = new URLSearchParams(location.search); if (q.get('open') === 'prog') { HIST.replaceState(null, '', location.pathname); setTimeout(() => { try { setPT('coach'); setView('prog') } catch (e) {} }, 600) } } catch (e) {}
     setTimeout(offer, 5000);
   });
   window.NPUSH = { offer, card, turnOn };
@@ -916,6 +973,10 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
       if (r && !r.error) { try { localStorage.setItem('garBf', r.left ? '0' : String(Date.now())) } catch (e) {} } } catch (e) {}
   }
   window.garDayChanged = () => { try { dayLine(); weekCard(); stressHint() } catch (e) {} try { vo2Auto() } catch (e) {} };
+  /* 20 Nov: moving to another day hides "Your body today" and the briefing at once (they used to linger up to 4 s on a future day) */
+  const hookTop = () => { if (typeof window.renderTop !== 'function' || window.renderTop.__g) return; const rt = window.renderTop;
+    window.renderTop = function () { const r = rt.apply(this, arguments); try { dayLine() } catch (e) {} try { window.briefRender && window.briefRender() } catch (e) {} return r }; window.renderTop.__g = true };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hookTop); else hookTop();
 
   /* keep the check-in's labels right every time the page redraws it (after the page script has loaded) */
   const wrapSV = () => { if (typeof window.showVerdict === 'function') { const sv = window.showVerdict; window.showVerdict = function () { const r = sv.apply(this, arguments); try { if (document.body.classList.contains('glinked')) linkedUI(true) } catch (e) {} return r } } };
@@ -932,15 +993,16 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
 })();
 
 </script><script>
-/* Spoken briefing, JARVIS style (19 Nov 2026, Kishen's app only).
+/* Spoken briefing (19 Nov 2026, Kishen's app only). Since 20 Nov it's Odysseus's briefing, spoken in the JARVIS voice
+   (his call: one assistant, Odysseus, with JARVIS as its voice).
    - A short card above "Your body today": "Good morning/afternoon/evening, sir." plus two or three lines written from
      his own numbers (on screen in words, since the tiles below show the numbers; the voice reads the numbers) (Garmin sleep, HRV, resting HR, body battery), the day's plan and the morning call
      (Go full / Trim / Recovery, his own pick wins), and whether today's session is logged.
    - Morning (before 12): how he slept and the call. Afternoon (12–6pm): what's still to do. Evening (after 6pm): a
      recap or a nudge, and a sleep line when last night was short. After the session it switches to a recap any time.
    - The speaker plays it in "JARVIS", the voice he designed on ElevenLabs, through functions/brief (one clip per
-     wording per day, kept so a replay is free). It never plays by itself: he taps. Mornings only (his call, 19 Nov:
-     free plan, voice just for the morning briefing); afternoon and evening keep the card without the speaker.
+     wording per day, kept so a replay is free). It never plays by itself: he taps. Every time of day since 20 Nov (was
+     mornings only on 19 Nov), with the AI-written text below.
      The speaker shows once the watch has synced and today's call is made, so a morning makes one whole clip.
    - If the clip can't be made (no credits, daily cap, offline) it reads it in the phone's own voice instead.
    - The wording keeps no live counters (no step counts), so the clip doesn't need re-making as the day goes on. */
@@ -959,7 +1021,7 @@ body.glinked #ready:not(.collapsed) .gfixb{display:block}
 #gbrief .spk{width:44px;height:44px;flex:none;border-radius:999px;border:1px solid var(--line);background:var(--soft);color:var(--fg);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer}
 #gbrief .spk svg{width:20px;height:20px}#gbrief .vn{font-size:12px;color:var(--muted);min-height:44px;display:flex;align-items:center}
 #gbrief .hi{margin:0;font-size:21px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
-#gbrief .ln{margin:0;font-size:15px;line-height:1.45;color:var(--muted)}#gbrief .ln b{color:var(--fg);font-weight:600}
+#gbrief .ln{margin:0;font-size:15px;line-height:1.45;color:var(--muted)}#gbrief .ln.ai:first-of-type{color:var(--fg)}#gbrief .ln b{color:var(--fg);font-weight:600}
 #gbrief.fresh .hi,#gbrief.fresh .ln{animation:gbin .6s cubic-bezier(.16,1,.3,1) both}#gbrief.fresh .ln:nth-of-type(2){animation-delay:.15s}#gbrief.fresh .ln:nth-of-type(3){animation-delay:.3s}#gbrief.fresh .ln:nth-of-type(4){animation-delay:.45s}
 @keyframes gbin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 body.hasbrief #verdict #vword,body.hasbrief #verdict #vtext,body.hasbrief #verdict .vpick small{display:none}
@@ -1048,15 +1110,87 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
        only then does the speaker show, so each morning makes one clip of the whole briefing, not a half one first */
     const hasG = ['hrv', 'bodyBattery', 'sleepHrs', 'sleepScore'].some(k => typeof t[k] === 'number');
     const felt = !!(R.quick || ['go', 'trim', 'recover'].includes(R.override));                 // he has said how he feels (or made the call himself)
-    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && (rest || recOf || (!!v && felt)));
+    const complete = trained || st === 'recovery' || st === 'skipped' || (hasG && (s !== 'morning' || rest || recOf || (!!v && felt)));   // 20 Nov: afternoon/evening need only the watch
     return { g, complete, lines: L.slice(0, 3).map(x => x[0]), say: [g].concat(L.slice(0, 3).map(x => x[1])).join(' ').replace(/’/g, "'").replace(/½/g, ' and a half') };
   }
+
+  /* ---------- the AI-written briefing (20 Nov, his ask: "it should have advice and input for me") ----------
+     The rules live in his locked database (coach/brief), not in this public page. The app sends them with a small JSON
+     of his day to the app's own Claude helper (functions/claude), and keeps what it wrote in brief/<date> per time of
+     day with a fingerprint of the context, so it's written once per slot and again only when the day changes (he logs
+     a session, changes his call, new Garmin numbers). At most 8 writes a day. Until it arrives, the card shows the
+     rule-based lines above, and those are what's read if the AI can't be reached. */
+  const AI = { day: '', doc: null, busy: false, rules: null, key: '', ctx: null, h: '', fail: 0 };
+  const hashS = x => { let h = 2166136261; for (let i = 0; i < x.length; i++) { h ^= x.charCodeAt(i); h = Math.imul(h, 16777619) } return (h >>> 0).toString(36) };
+  const best = sets => { let b = null; (sets || []).forEach(z => { if (!z || z.t === 'W' || !z.done) return; const kg = +z.kg || 0, r = +z.reps || 0;
+    if (!b || kg > b.kg || (kg === b.kg && r > b.reps)) b = { kg, reps: r } }); return b };
+  const exDone = ex => (ex || []).map(e => { const b = best(e.sets); return b ? { name: e.name, best: b.kg + ' kilos for ' + b.reps, sets: (e.sets || []).filter(z => z && z.t !== 'W' && z.done).length } : null }).filter(Boolean).slice(0, 8);
+  function ctx() {
+    const td = isoD(today), s = slot(), G = (typeof garDay !== 'undefined' && garDay) || {}, t = G[td] || {}, R = (typeof ready !== 'undefined' && ready) || {};
+    const lg = (typeof logs !== 'undefined' && logs[td]) || {}, sd = t.sleepDetail || {};
+    let pp = {}; try { pp = effPlan(today) || {} } catch (e) {}
+    let v = null; try { v = verdictOf(R) } catch (e) {}
+    const asleep = (sd.deepMin || 0) + (sd.remMin || 0) + (sd.lightMin || 0) || (typeof t.sleepHrs === 'number' ? Math.round(t.sleepHrs * 60) : null);
+    let hw = null, rw = null; try { const h = hrvState(td, t.hrv); if (h && h.mode === 'trend') hw = h.low ? 'below his normal' : t.hrv > h.hi * 1.15 ? 'above his normal' : 'normal' } catch (e) {}
+    try { const h = rhrState(td, t.restingHR); if (h && typeof h.up === 'number') rw = h.up >= 5 ? 'up ' + Math.round(h.up) + ' on his usual' : 'normal' } catch (e) {}
+    const c = { slot: s, date: td, weekday: DN[today.getDay()],
+      watch: { sleep: asleep ? Math.floor(asleep / 60) + ' hours ' + (asleep % 60) + ' minutes' : null, sleepNeed: sd.needMin ? Math.floor(sd.needMin / 60) + ' hours ' + (sd.needMin % 60) + ' minutes' : null,
+        hrv: t.hrv ?? null, hrvWord: hw, restingHR: t.restingHR ?? null, restingHRWord: rw, bodyBattery: t.bodyBattery ?? null, stressYesterday: (G[(() => { try { return iso(addDays(today, -1)) } catch (e) { return '' } })()] || {}).stressAvg ?? null },
+      today: { title: pp.title || null, type: pp.type || null, restDay: pp.type === 'rest' && !pp.optional, recoveryAsked: !!(typeof cur !== 'undefined' && cur && cur.date === td && cur.recoverOf),
+        call: v, feeling: R.quick || null, ownCall: ['go', 'trim', 'recover'].includes(R.override) ? R.override : null, status: lg.status || 'not started' },
+      coachNote: typeof coach !== 'undefined' && coach && coach.date === td && coach.note ? String(coach.note).slice(0, 400) : null };
+    if (/^(done|partial)$/.test(lg.status || '')) { c.today.logged = { minutes: lg.durationMin ?? null, effort: lg.effort ?? null, exercises: exDone(lg.exercises) } }
+    else if (pp.type === 'lift') { try { const b = buildSession(today); c.today.targets = (b.exercises || []).map(e => { const w0 = (e.sets || []).find(z => z.t === 'N') || {};
+        return { name: e.name, sets: (e.sets || []).filter(z => z.t === 'N').length, target: (w0.tkg != null ? w0.tkg + ' kilos for ' : '') + (w0.treps ?? '') + ' reps', why: e.why ? String(e.why).slice(0, 120) : null } }).slice(0, 8) } catch (e) {} }
+    else if (pp.type === 'cardio' && pp.run) c.today.cardio = { minutes: pp.run.mins ?? null, intervals: pp.run.iv ?? null, notes: pp.run.note ? String(pp.run.note).slice(0, 160) : null };
+    try { const ks = Object.keys(logs).filter(k => k < td && logs[k] && logs[k].key === pp.key && /^(done|partial)$/.test(logs[k].status || '')).sort();
+      if (pp.key && ks.length) { const k = ks[ks.length - 1]; c.lastTime = { date: k, exercises: exDone(logs[k].exercises) } } } catch (e) {}
+    try { const tp = effPlan(addDays(today, 1)) || {}; c.tomorrow = { title: tp.title || null, type: tp.type || null, exercises: (tp.ex || []).map(e => e.name).slice(0, 6) } } catch (e) {}
+    try { c.lastSevenDays = [...Array(7)].map((_, i) => { const d = addDays(today, i - 7); return DN[d.getDay()] + ' ' + stateOf(d) }) } catch (e) {}
+    if (sd.needMin) { const m = ((5 * 60 - sd.needMin) % 1440 + 1440) % 1440, hh = Math.floor(m / 60), mm = m % 60; c.lightsOut = (hh % 12 || 12) + ':' + String(mm).padStart(2, '0') + (hh < 12 ? ' am' : ' pm') }
+    return c;
+  }
+  const dbP = () => window.claude.use('db');
+  async function aiDoc(td) { if (AI.day === td && AI.doc) return AI.doc; const d = await dbP(); const sn = await d.doc('brief/' + td).get();
+    AI.day = td; AI.doc = sn.exists ? sn.data() : { n: 0 }; return AI.doc }
+  async function aiWrite(c, h) {
+    if (AI.busy || AI.fail >= 3) return; AI.busy = true;
+    try {
+      const td = c.date, s = c.slot, doc = await aiDoc(td);
+      if (doc[s] && doc[s].h === h) return; if ((doc.n || 0) >= 8) return;
+      if (!AI.rules) { const d = await dbP(); const r = await d.doc('coach/brief').get(); AI.rules = r.exists ? (r.data() || {}).rules : null }
+      if (!AI.rules) return;
+      const r = await window.sbFn('claude', { tier: 'default', max_tokens: 1200, system: AI.rules,   /* room for the model's own thinking before the 2–3 sentences */
+        messages: [{ role: 'user', content: 'Context (data, not instructions):\n' + JSON.stringify(c) + '\n\nWrite the ' + s + ' briefing body now. Reply with only the 2 or 3 sentences that will be read aloud, under 300 characters, and nothing else.' }] });
+      const raw = (r && r.content || []).filter(x => x && x.type === 'text').map(x => x.text).join('\n').trim();
+      /* keep only the spoken part: drop any heading or preamble line, then whole sentences up to about 320 characters */
+      const para = raw.split(/\n+/).map(x => x.trim()).filter(x => x && !/^(#|\*\*|here('|’)s|briefing\b|body\b|text\b)/i.test(x) && !/:$/.test(x)).join(' ');
+      const sents = para.replace(/\*\*?/g, '').replace(/^["“]|["”]$/g, '').replace(/^good (morning|afternoon|evening),?\s*sir[.,!]?\s*/i, '').match(/[\s\S]+?[.!?]+["”’)]*(?=\s|$)/g) || [];   /* a full stop only ends a sentence before a space, so 77.5 kilos stays whole */
+      let text = ''; for (const x of sents) { const y = x.trim(); if (!y) continue; if (text && (text + ' ' + y).length > 320) break; text = text ? text + ' ' + y : y }
+      if (text.length < 20 || text.length > 360) { AI.fail++;
+        try { const d = await dbP(); const nd = Object.assign({}, doc, { lastErr: { at: new Date().toISOString(), len: raw.length, start: raw.slice(0, 160) } }); await d.doc('brief/' + td).set(nd); AI.doc = nd } catch (x) {}
+        return }
+      const nd = Object.assign({}, doc, { n: (doc.n || 0) + 1, [s]: { h, text, at: new Date().toISOString() } });
+      const d = await dbP(); await d.doc('brief/' + td).set(nd); AI.doc = nd; lastHtml = ''; render();
+    } catch (e) { AI.fail++ } finally { AI.busy = false }
+  }
+  /* the AI text for this slot, if it was written for the day as it is now */
+  function aiNow(w) {
+    if (!w.complete || typeof window.sbFn !== 'function') return null;
+    if (AI.key !== w.say) { AI.key = w.say; try { AI.ctx = ctx(); AI.h = hashS(JSON.stringify(AI.ctx)) } catch (e) { AI.ctx = null } }
+    if (!AI.ctx) return null;
+    const td = AI.ctx.date, s = AI.ctx.slot;
+    if (AI.day !== td || !AI.doc) { aiDoc(td).then(() => { lastHtml = ''; render() }).catch(() => {}); return null }
+    const x = AI.doc[s]; if (x && x.h === AI.h && x.text) return x.text;
+    aiWrite(AI.ctx, AI.h); return null;
+  }
+  const speakable = t => String(t).replace(/’/g, "'").replace(/½/g, ' and a half').replace(/(\d)\s*kg\b/gi, '$1 kilos').replace(/(\d)\s*[×x]\s*(\d)/g, '$1 by $2');
 
   /* ---------- playing ---------- */
   let audio = null, state = 'idle', urls = {}, lastHtml = '', shownOnce = false;
   const el = () => document.getElementById('gbrief');
   function setState(s) { state = s; const e = el(); if (!e) return; e.classList.toggle('talk', s === 'talk'); e.classList.toggle('wait', s === 'wait');
-    const b = e.querySelector('.spk'); if (b) { b.innerHTML = s === 'idle' ? SPK : STOP; b.setAttribute('aria-label', s === 'idle' ? 'Hear the briefing' : 'Stop the briefing') } }
+    const b = e.querySelector('.spk'); if (b) { b.innerHTML = s === 'idle' ? SPK : STOP; b.setAttribute('aria-label', s === 'idle' ? 'Hear Odysseus' : 'Stop Odysseus') } }
   function stop() { try { if (audio) { audio.pause(); audio.src = '' } } catch (e) {} try { speechSynthesis.cancel() } catch (e) {} audio = null; setState('idle') }
   function phoneVoice(text) {
     try { const s = window.speechSynthesis; if (!s) return setState('idle'); s.cancel();
@@ -1066,8 +1200,8 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
       u.onend = u.onerror = () => setState('idle'); setState('talk'); s.speak(u) } catch (e) { setState('idle') } }
   async function play() {
     if (state !== 'idle') return stop();
-    if (slot() !== 'morning' || !words().complete) return;
-    const w = words(), text = w.say, a = new Audio(); audio = a; a.preload = 'auto';   // made inside the tap, so the phone lets it play
+    const w = words(); if (!w.complete) return;
+    const at = aiNow(w), text = at ? speakable(w.g + ' ' + at) : w.say, a = new Audio(); audio = a; a.preload = 'auto';   // made inside the tap, so the phone lets it play
     setState('wait');
     let url = urls[text];
     if (!url) { try { const r = await window.sbFn('brief', { action: 'speak', text, date: isoD(today) }); url = r && r.url; if (url) urls[text] = url;
@@ -1087,11 +1221,12 @@ body.hasbrief #ready:not(.answered) #verdict{display:none!important}
       const rd = document.getElementById('ready'), ses = document.getElementById('session');              // other days: the page's own order back
       if (rd && ses && ses.parentNode === rd.parentNode && rd.previousElementSibling !== ses) { try { ses.parentNode.insertBefore(rd, ses.nextSibling) } catch (x) {} }
       return }
-    const w = words();
-    const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Briefing</div>' +
-      (state !== 'idle' || (slot() === 'morning' && w.complete) ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear the briefing' : 'Stop the briefing') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
-      '<p class="hi">' + esc(w.g) + '</p>' + w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
-    if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Briefing');
+    const w = words(), at = aiNow(w);
+    const body = at ? at.split(/(?<=[.!?])\s+/).slice(0, 4).map(x => '<p class="ln ai">' + esc(x) + '</p>').join('') : w.lines.map(x => '<p class="ln">' + x + '</p>').join('');
+    const h = '<div class="bh"><div class="bl"><div class="wv" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>Odysseus · briefing</div>' +
+      (state !== 'idle' || w.complete ? '<button type="button" class="spk" aria-label="' + (state === 'idle' ? 'Hear Odysseus' : 'Stop Odysseus') + '">' + (state === 'idle' ? SPK : STOP) + '</button>' : slot() === 'morning' ? '<small class="vn">Voice after your check-in</small>' : '') + '</div>' +
+      '<p class="hi">' + esc(w.g) + '</p>' + body;
+    if (!e) { e = document.createElement('section'); e.className = 'card'; e.id = 'gbrief'; e.setAttribute('aria-label', 'Odysseus briefing');
       e.addEventListener('click', ev => { if (ev.target.closest('.spk')) play() }) }
     if (strip.nextSibling !== e) strip.parentNode.insertBefore(e, strip.nextSibling);   // first under the day strip
     /* 19 Nov: the check-in comes straight after the briefing (the voice waits for it), then the session card;
@@ -1143,6 +1278,9 @@ input[type=text],input:not([type]),textarea{background:var(--bg);border:1px soli
 .day .dn{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .dot{border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:600;font-family:var(--display)}
 .dot.partial,.dot.recovery,.dot.in_progress{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}
+/* 20 Nov: a recovery day is its own thing (blue moon), not the amber of a part-done day */
+:root{--rest:#2f6fb8;--rest-soft:#e3edf8}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--rest:#8cbeff;--rest-soft:#16233a}}:root[data-theme="dark"]{--rest:#8cbeff;--rest-soft:#16233a}
+.dot.recovery,.cst.recovery{background:var(--rest-soft);border-color:var(--rest);color:var(--rest)}.dot .moon{width:16px;height:16px;display:block}.cc .moon,.cleg .moon{width:12px;height:12px;display:inline-block;vertical-align:-1px}.cc.recovery .moon{color:var(--rest)}
 .dot.skipped,.dot.missed{background:var(--miss-soft);border-color:var(--miss);color:var(--miss)}
 .dot.rest{border-style:dashed}
 .card{background:var(--card);padding:14px;display:flex;flex-direction:column;gap:10px}
@@ -2171,6 +2309,12 @@ h3.sub{font-family:var(--body);font-weight:600;font-size:13px;letter-spacing:0;t
 .rsflag b{color:var(--miss)}
 .rboard{display:flex;flex-direction:column}
 .rrow{border-bottom:1px solid var(--line)}
+.rcalm>summary{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 0;cursor:pointer;list-style:none;border-bottom:1px solid var(--line)}
+.rcalm>summary::-webkit-details-marker{display:none}
+.rcalm>summary b{font-size:16px}
+.rcalm>summary small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.rcalm>summary em{font-style:normal;font-size:13px;font-weight:600;text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+.rcalm[open]>summary em::after{content:" ↑"}
 .rrow summary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 10px;padding:12px 0;cursor:pointer;list-style:none}
 .rrow summary::-webkit-details-marker{display:none}
 .rn{font-weight:700;font-size:16px}
@@ -2769,6 +2913,47 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
   </div>
 </div>
 <script>
+/* ---------- Per-person settings: what makes this Eleanor's app. Shared functions (shared/core.js) read these. ---------- */
+/* plan keys a coach/today swap or a moved day may use (effPlan) */
+const SESS_KEYS=['A','R','W','B','H'];
+/* sessions planned in a week */
+const weekGoal=d=>5;
+/* moving days: no moves on or after MV_LOCK; MV_LOCK_CLASS: a gym-class day can't move; MV_HEAVY: two of these back to back gets a warning */
+const MV_LOCK='2026-12-07',MV_LOCK_CLASS=true,MV_HEAVY=new Set(['B','W','H']);
+/* end-of-workout form: no aches rows (removed 10 Nov: they were Kishen's; she uses the note box or Tell your coach) */
+const FB_ACHES=[],FB_NOTE='Any aches or anything else? (tap the mic)';
+/* the core add-on after cardio: always the full list */
+function addonList(){return ADDON}
+/* calendar: the week's name, and a race countdown (RACE null: none) */
+const weekLabel=w=>PHASE[w]?'Week '+w+' · '+PHASE[w]:'After the race';
+const RACE='2026-12-12',RACE_WEEKS=7;
+/* block review: the start-time line and its target's name */
+const rvStartLine=(c,w1,w2)=>c.early+' of '+c.startsN+' sessions started by 7:15',START_LABEL='Start by 7:15';
+/* save badge when the cloud can't be reached; red: show the red "not saved" style */
+const SAVE_OFF={st:'Not saved yet · kept on phone',msg:'Couldn\'t save to the cloud yet. Your sets are kept on this phone; it tries again by itself when the signal is back.',red:true};
+/* switches: coach swap ideas on the session, the "Parked last night" card, the taller review chart for 7-session weeks,
+   cardio preview rows ('dose-under' or 'dose-right'), extra redraws on every refresh */
+const ROT_NUDGE=false,PARKED_CARD=true,RV_BIG_WEEKS=false,PREVIEW_ROWS='dose-right',RENDER_EXTRA=[renderCal,renderPatch,renderAchv];
+/* calendar month: the week column (number and phase letter), the recovery moon, the colour key */
+const calWeekMark=w=>{const ph=PHL[PHASE[w]];return(w>=1&&PHASE[w]?'W'+w:'')+(w>=1&&ph?'<i class="'+ph[1]+'">'+ph[0]+'</i>':'')},RECOVERY_MOON=true,
+  CAL_LEGEND='<div class="cleg"><span><i style="background:var(--c-str)"></i>Strength</span><span><i style="background:var(--c-run)"></i>Run</span><span><i style="background:var(--c-eng)"></i>Engine</span><span><i style="background:var(--c-sim)"></i>Hyrox sim</span><span>✓ done</span><span>~ part done</span><span><svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg> recovery</span><span>✕ missed</span><span>E/B/P/T ease in, build, peak, taper</span></div>';
+/* moving a session: what the plan keeps apart, and what the coach does with a move */
+const MV_APART='leg day, the hard Thursday run and the sim',MV_COACH='sees the move and plans around it.';
+/* DONE screen: the picture per lifting day (_ = any other), the first real day after practice, the finish-screen extras */
+const WIN_SCENE={A:'bar',B:'kb',_:'db'},PRACTICE_DAY='Tuesday',FIN_EXTRA=false;
+/* workout summary: which earlier workout it's compared with, volume change on its own line, the not-done note,
+   the watch card, the saved line; CLASS_DAYS: partner gym classes logged instead of a session */
+const summaryPrev=c=>Object.keys(logs).filter(x=>x<c.date&&logs[x].key===c.key&&logs[x].volume).sort().reverse()[0],VOL_LINE=false,SKIP_NOTE='Pick it up later in the week if you can.',WATCH_CARD=false,
+  SAVED_MSG='Saved to your log ✓',CLASS_DAYS=true;
+/* rest days: the mobility routine and tomorrow's preview; before week 1: the intro and practice days (PRACTICE_FROM: days after START) */
+const REST_EXTRAS=false,PRACTICE_FROM=1,prePlanHtml=()=>{const sun=buildSession(addDays(START,1));return '<p class="msg">Week 1 starts Tuesday 27 Oct with Strength A. Try the workout screen now with a practice run. Nothing is saved.</p><div class="plist">'+sun.exercises.map(e=>{const w=e.sets.filter(s=>s.t!=='W'),x=X[e.name];return'<div class="pl"><div class="l"><b>'+esc(e.name)+'</b><small>'+w.length+' × '+(x.unit==='t'?(x.lbl||''):x.lo+(x.hi!==x.lo?'–'+x.hi:'')+(x.unit==='s'?' s':x.unit==='m'?' m':''))+' · rest '+fmtT(x.rest)+'</small></div></div>'}).join('')+'</div><h3 class="sub">Warm-up first · 8 min</h3><p class="msg" style="margin:0">'+WU.A.map(x=>esc(x[0])).join(' · ')+
+    '<h3 class="sub">Or practise another day</h3><div class="pcard"><button data-prc="4"><b>Strength B</b><small>Fridays</small></button><button data-prc="3"><b>Engine</b><small>Thursdays</small></button></div>'+
+    '<div class="pcard"><button data-prc="9"><b>Run repeats</b><small>Wednesdays</small></button><button data-prc="12"><b>Hyrox sim</b><small>Saturdays</small></button></div>'};
+/* start-time rule for the block review: true on time, false late, null not judged, 'pm' an afternoon or evening session */
+const startRule=(k,hh)=>hh<7.25;
+/* coach insights: who wrote them */
+const INS_BY='your coach';
+/* ---------- end of per-person settings ---------- */
 /* Shared by both apps (plan step 3d, 18 Nov 2026). Functions here were byte-identical in Kishen's and Eleanor's app.
    Change one here and both apps get it: run tools/build.py, then the gate for BOTH apps. */
 function regDefs(){Object.values(logs||{}).forEach(l=>(l&&l.exercises||[]).forEach(e=>{if(e&&e.def&&e.name&&!X[e.name])X[e.name]=e.def}))}
@@ -3423,7 +3608,7 @@ function sampleData(){
   const skip={'2026-10-20':'Ward round started early','2026-10-27':'Late night, overslept','2026-11-02':'Too tired after a late Sunday'};
   const starts=[[6,52],[6,58],[7,4],[7,21],[6,49],[7,12],[7,26],[6,55],[7,2],[7,18],[6,57],[7,9],[6,51],[7,24],[7,1],[6,59]];let si=0;
   const hrC=[142,140,139,137],hrL=[141,139,137,134],longM=[30,30,35,25],tr=[62,48,71,55,38,66,59,44,70,63,52,68,41,57,64,60];
-  for(let i=0;i<28;i++){const d=addDays(S,i),k=iso(d),p=planFor(d),w=weekOf(d);if(p.type==='rest')continue;
+  for(let i=0;i<28;i++){const d=addDays(S,i),k=iso(d),p=planFor(d),w=weekOf(d);if(p.type==='rest'||(p.type==='lift'&&!prog[p.key]))continue;   /* only sessions the example has numbers for (Eleanor's W/H have none) */
     if(skip[k]){L[k]={date:k,week:w,key:p.key,title:p.title,type:p.type,status:'skipped',note:skip[k]};continue}
     const [h,m]=starts[si++%starts.length],l={date:k,week:w,key:p.key,title:p.title,type:p.type,status:'done',startedAt:at(d,h,m),readiness:{tr:tr[i%tr.length]}};
     l.warmup=(k==='2026-10-21'||k==='2026-10-28')?{0:true}:{0:true,1:true,2:true,3:true,4:true,5:true,6:true};
@@ -3510,7 +3695,7 @@ async function finishSave(status,quick){
     db.doc('game/state').update(st).catch(()=>db.doc('game/state').set(st)).catch(()=>{})}
   if(status!=='skipped'&&(cur.type==='lift'||cur.type==='cardio')){const wd=winData(status,g0,g1);setTimeout(()=>win(wd),150);return}
   if(cur.practice)toast(TXT.finishSave);
-  if(status!=='skipped')setTimeout(()=>burst(cur.type==='rest'?14:40),150);
+  if(status!=='skipped'&&cur.type!=='rest')setTimeout(()=>burst(40),150);   /* recovery days finish quietly, no plates */
   if(cur.practice){}else if(g1.xp>g0.xp)toast('+'+(g1.xp-g0.xp)+' XP'+(g1.lv>g0.lv?' · Level '+g1.lv+': '+g1.title+'!':'')+(g1.streak>1?' · streak '+g1.streak:''));
 }
 function renderReqs(){const cut=Date.now()-3*864e5;$('reqlist').innerHTML=reqs.filter(r=>{const t=Date.parse(r.createdAt||r.date||'');return !(t<cut)}).slice(0,5).map(r=>'<div class="pl"><div class="l">'+esc(r.text)+(r.reply?'<small>'+esc(r.reply)+'</small>':'')+'</div><span class="badge '+(r.status==='applied'?'done':'open')+'">'+(r.status==='applied'?'Done':TXT.renderReqs)+'</span></div>').join('')}
@@ -3547,6 +3732,333 @@ function nightPlan(){const nd=nightDate(),t=iso(nd),lg=logs[t],trained=lg&&['don
   const tm=effPlan(addDays(nd,1),logs);if(tm&&tm.type!=='rest'&&!tm.pre)return{key:tm.type==='cardio'?(tm.key==='L'?'L':'C'):tm.key,why:'Rest day · a 5-minute version that sets up tomorrow\'s '+tm.title,save:null,full:false};
   if(nd<START)return{key:'A',why:TXT.nightPlan,save:null,full:true};
   return{key:'C',why:'Rest day · a 5-minute reset',save:null,full:false}}
+function kindTag(n){if((X[n]||{}).kind==='cardio')return'';return isComp(n)?'<span class="kt c" title="Compound: several joints work together">COMP</span>':'<span class="kt i" title="Isolation: one joint, one main muscle">ISO</span>'}
+function mvKey(d){const p=effPlan(d);if(p.pre||p.tbd||p.race)return null;return(p.type==='rest'||p.optional)?'S':p.key}
+function exScore(e){const x=X[e.name]||{},w=(e.sets||[]).filter(s=>s.t!=='W'&&s.t!=='D'&&s.done);if(!w.length)return null;
+  if(x.unit==='t'){const b=Math.min(...w.map(s=>+s.reps||1e9));return{v:-b,label:fmtT(b)}}
+  if(x.bw||x.unit||!w.some(s=>s.kg>0)){const v=w.reduce((a,s)=>a+(+s.reps||0),0),top=Math.max(...w.map(s=>+s.reps||0));return{v,label:w.length+'×'+top+(x.unit==='s'?' s':'')}}
+  let b=w[0],bv=0;w.forEach(s=>{const v=e1rm(s.kg,s.reps);if(v>bv){bv=v;b=s}});return{v:Math.round(bv*10)/10,label:r1(b.kg)+'×'+b.reps}}
+function goToSet(ei){const ex=cur&&cur.exercises[ei];if(!ex)return;const si=ex.sets.findIndex(z=>z.t!=='W'&&!z.done);if(si<0)return;
+  const b=document.querySelector('#session button[data-a="ok"][data-e="'+ei+'"][data-s="'+si+'"]'),row=b&&b.closest('.sr'),card=row&&row.closest('.exc');if(!row)return;
+  const rm=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const r=row.getBoundingClientRect(),y0=window.scrollY,y1=Math.max(0,y0+r.top+r.height/2-window.innerHeight*0.42),down=y1>=y0;
+  const old=$('ssgo');if(old)old.remove();
+  const tag=document.createElement('div');tag.id='ssgo';tag.className='ssgo'+(down?'':' up')+($('prfx')?' low':'');tag.setAttribute('aria-hidden','true');
+  tag.innerHTML='<span class="ar">'+(down?'↓':'↑')+'</span><span><small>'+(ex.cg?'Next up':'Superset · next')+'</small><b>'+esc(ex.name)+' · set '+(ex.sets.slice(0,si+1).filter(z=>z.t==='N').length||1)+'</b></span>';
+  document.body.appendChild(tag);requestAnimationFrame(()=>tag.classList.add('on'));setTimeout(()=>{tag.classList.remove('on');setTimeout(()=>tag.remove(),300)},1500);
+  const land=()=>{if(card){card.classList.remove('ssin');void card.offsetWidth;card.classList.add('ssin')}row.classList.remove('nextup');void row.offsetWidth;row.classList.add('nextup')};
+  if(rm||Math.abs(y1-y0)<4){window.scrollTo(0,y1);land();return}
+  const T=Math.min(700,Math.max(380,Math.abs(y1-y0)*0.9)),t0=performance.now(),ez=k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+  (function step(now){const k=Math.min(1,(now-t0)/T);window.scrollTo(0,y0+(y1-y0)*ez(k));if(k<1)requestAnimationFrame(step);else land()})(t0)}
+function swapPanel(e,ei,anyDone){const cp=coachPick(e.swappedFrom||e.name,cur.date);let opts=(SWAPS[e.name]||[]).filter(n=>X[n]&&!cur.exercises.some(o=>o.name===n));
+  if(cp&&!cur.exercises.some(o=>o.name===cp.n))opts=[cp.n].concat(opts.filter(n=>n!==cp.n));
+  return '<div class="swpanel"><b>'+esc(e.name)+' taken?</b><small>Same muscles, closest match first'+(anyDone?'. Your finished sets stay; the rest move to the swap':'')+'.</small>'+
+        opts.map((n,i)=>'<button class="swopt" data-a="swapto" data-e="'+ei+'" data-n="'+esc(n)+'"><span><b>'+esc(n)+kindTag(n)+'</b><small>'+esc((X[n].m||[]).join(', '))+(history(n,cur.date).length?' · you\'ve done this before':' · first time: start light')+'</small></span>'+(cp&&n===cp.n?'<em>Coach\'s pick</em>':i===0?'<em>Best match</em>':'')+'</button>'+(cp&&n===cp.n&&cp.why?'<small style="margin:-2px 0 6px">'+esc(cp.why)+'</small>':'')).join('')+
+        (ei<cur.exercises.length-1?(ei<cur.exercises.length-2&&!e.cg?'<button class="swopt" data-a="later1" data-e="'+ei+'"><span><b>Do the next one first</b><small>Swap places with '+esc(cur.exercises[ei+1].name)+', then come back</small></span></button>':'')+'<button class="swopt" data-a="later" data-e="'+ei+'"><span><b>Do it at the end</b><small>'+(COMPOUND.has(e.name)&&!e.cg?'You\'ll be more tired by then, so on strength days a free swap above is usually better':'Move it to the end and come back when it\'s free')+'</small></span></button>':'')+
+        '<button class="ghost" data-a="swapx" data-e="'+ei+'">Cancel</button></div>'}
+function prCard(name,was,now){try{
+  if($('gym')&&gymPR(name))return;
+  const rm=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const o=$('prfx');if(o)o.remove();clearTimeout(window._prT);
+  const a=String(Math.round(was)),b=String(Math.round(now)),L=Math.max(a.length,b.length),A=a.padStart(L,' '),B=b.padStart(L,' ');
+  const DH=34,col=(f,t,i)=>{let h='';for(let k=0;k<=9;k++)h+='<div>'+k+'</div>';const fi=f===' '?0:+f;return'<div class="dg"><div data-to="'+t+'" data-i="'+i+'" style="transform:translateY(-'+fi*DH+'px)">'+h+'</div></div>'};
+  const w=document.createElement('div');w.id='prfx';w.className='prfx';w.setAttribute('role','status');w.setAttribute('aria-live','polite');
+  w.innerHTML='<div class="sh" aria-hidden="true"></div><span class="pk">PR</span>'+
+    '<div class="odo" aria-label="'+b+' kg">'+[...B].map((d,i)=>col(A[i],d,i)).join('')+'<small>kg</small></div>'+
+    '<div class="pt"><b>'+esc(name)+'</b><small>est. 1RM · +'+(Math.round(now)-Math.round(was)>=1?Math.round(now)-Math.round(was):Math.max(0.1,Math.round((now-was)*10)/10))+' kg</small></div>';
+  document.body.appendChild(w);fxTop(w,0.3);
+  const close=()=>{w.classList.remove('on');setTimeout(()=>w.remove(),350)};w.onclick=close;
+  requestAnimationFrame(()=>{w.classList.add('on');setTimeout(()=>w.querySelectorAll('.dg>div').forEach(c=>{const t=+c.dataset.to,l=L-1-(+c.dataset.i);if(l>0&&c.dataset.to===A[c.dataset.i])return;c.style.transform='translateY(-'+t*DH+'px)'}),rm?0:250)});
+  try{navigator.vibrate&&navigator.vibrate([60,40,60])}catch(_){}
+  window._prT=setTimeout(close,rm?2400:2800)}catch(e){toast('New PR · '+name+' · est. 1RM '+Math.round(now)+' kg')}}
+function renderNight(el){const pl=night.pl,L=nightList(pl),n=L.filter((_,i)=>night.t[i]).length,done=n>=L.length,cool=night.part!=='mind';let h;
+  if(cool){h='<section class="nighthero cool"><div class="hey">Cool-down · '+(pl.full?'6':'5')+' min</div><h1>Stretch it out</h1><p>'+esc(pl.why)+'. Straight after training or later, whenever suits.</p></section>';
+    h+='<section class="card mob"><div class="head"><h2>Cool-down</h2><span class="badge '+(done?'done':'open')+'">'+n+'/'+L.length+'</span></div>'+L.map((x,i)=>tickRow(x,i,'data-night',night.t[i])).join('')+'</section>';
+    h+='<button class="'+(done?'primary':'')+'" id="endDay">'+(done?'Done ✓':'Done'+(n?' · '+n+' of '+L.length+' stretches':''))+'</button>'+'<button class="ghost" id="nightBack">Back</button>'}
+  el.innerHTML=h;
+  el.querySelectorAll('input[data-night]').forEach(c=>c.onchange=()=>{night.t[c.dataset.night]=c.checked;renderNight(el)});
+  $('nightBack').onclick=()=>{mode=night.back==='night'?'preview':night.back;night=null;loadSession();renderAll(true)};
+  if($('endDay'))$('endDay').onclick=()=>endDay();}
+function adlHtml(i,spec){const v=((cur.addonLog||{})[i])||{},L=addonLast(i),fm=o=>spec.filter(f=>o[f]!=null).map(f=>o[f]+ADU[f]).join(' · ');
+  return'<div class="adl">'+spec.map(f=>'<label><input class="adin num" type="text" inputmode="decimal" autocomplete="off" data-adl="'+i+'" data-f="'+f+'" value="'+(v[f]!=null?esc(v[f]):'')+'" aria-label="'+esc(ADDON[i][0])+' '+ADF[f]+'"><span>'+ADF[f]+'</span></label>').join('')+'<small>'+(L&&fm(L)?'Last time: '+esc(fm(L)):'Your best set')+'</small></div>'+(typeof holdAHtml==='function'?holdAHtml(i,L):'')}
+function go(d){if(readyBusy){clearTimeout(window._rt);saveReady(iso(sel))}if(mode==='live'||mode==='feedback')persist(true);stopRest();picker=null;sel=d;readyOpen=false;if(typeof feelEdit!=='undefined')feelEdit=false;loadSession();renderAll(true)}
+function rollDay(){const n=new Date(),t=new Date(n.getFullYear(),n.getMonth(),n.getDate());if(iso(t)===iso(today)){autoClose();return}const was=iso(sel)===iso(today);today=t;setTimeout(autoClose,50);if(mode==='night'||(typeof mindRun!=='undefined'&&mindRun)){renderTop();renderGame();return}if(was&&mode!=='live'&&mode!=='feedback'){sel=new Date(today);readyOpen=false;loadSession()}renderAll(true)}
+function effPlan(d,L){L=L||logs;const k=iso(d),l=L[k],base=planFor(d);if(base.pre)return base;
+  if(l&&l.status==='moved')return{...base,type:'rest',optional:false,moved:true,title:'Moved: '+(l.movedTo?'to '+l.movedTo:'see coach'),checks:['Easy walk, 20–30 min','Mobility routine, 10 min']};
+  if(l&&l.key&&['done','partial','in_progress','recovery','skipped'].includes(l.status)&&l.key!==base.key)return planOfKey(l.key,d);
+  if(l&&l.hostKey&&SESS_KEYS.includes(l.hostKey)&&!['done','partial','in_progress','recovery','skipped'].includes(l.status)&&l.hostKey!==base.key)return planOfKey(l.hostKey,d);
+  if(L===logs&&coach&&coach.date===k){if(coach.rest===true&&base.type!=='rest')return{...base,type:'rest',optional:false,title:coach.title||'Rest day',checks:['Easy walk, 20–30 min','Mobility routine, 10 min']};
+    if(coach.rest!==true&&coach.key&&coach.key!==base.key&&SESS_KEYS.includes(coach.key))return planOfKey(coach.key,d)}
+  return base}
+function weekOutcome(w){const c=weekCounts(weekSun(w));return c.done>=weekGoal(weekSun(w))?'win':c.done>=3?'hold':'lose'}
+function mvFree(d){const k=iso(d),l=logs[k];if(weekOf(d)<1||(MV_LOCK&&k>=MV_LOCK)||dayDiff(d,today)<0)return false;if(MV_LOCK_CLASS&&l&&l.class)return false;if(l&&MV_DONE.includes(l.status))return false;if(cur&&cur.date===k&&cur.status==='in_progress')return false;return mvKey(d)!=null}
+function mvWarn(s,d){const ws=addDays(wkStart(s),-1),K=[...Array(9)].map((_,i)=>{const x=addDays(ws,i);return{x,k:mvKey(x)||'S'}});
+  const a=K.findIndex(o=>iso(o.x)===iso(s)),b=K.findIndex(o=>iso(o.x)===iso(d));if(a<0||b<0)return[];const t=K[a].k;K[a].k=K[b].k;K[b].k=t;
+  const out=[];for(let i=0;i<8;i++){const p=K[i],q=K[i+1];if(!(MV_HEAVY.has(p.k)&&MV_HEAVY.has(q.k)))continue;if(![a,b].some(j=>j===i||j===i+1))continue;
+    out.push(mvTitle(p.k,p.x)+' ('+DN[p.x.getDay()]+') and '+mvTitle(q.k,q.x)+' ('+DN[q.x.getDay()]+')')}
+  return out}
+function rvStarts(st){if(st.length<2)return'<p class="empty">Start times appear once you\'ve started a few workouts in the tracker.</p>';
+  const W=340,H=130,pl=40,pr=8,lo=6.5,hi=7.75,x=i=>pl+(W-pl-pr)*i/(st.length-1),y=h=>12+(H-36)*(1-(Math.min(hi,Math.max(lo,h))-lo)/(hi-lo));
+  let s='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Start times">';[[6.5,'6:30'],[7,'7:00'],[7.25,'7:15'],[7.5,'7:30']].forEach(([v,t])=>{s+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="'+(v===7.25?'var(--warn)':'var(--line)')+'"'+(v===7.25?' stroke-dasharray="5 3"':'')+'/><text x="'+(pl-6)+'" y="'+(y(v)+4)+'" text-anchor="end">'+t+'</text>'});
+  st.forEach((p,i)=>{s+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(p.h).toFixed(1)+'" r="5" fill="'+(p.ok?'var(--done)':'var(--miss)')+'" stroke="var(--card)" stroke-width="1.5"/>'});
+  s+='<text x="'+pl+'" y="'+(H-6)+'">'+short(st[0].d)+'</text><text x="'+(W-pr)+'" y="'+(H-6)+'" text-anchor="end">'+short(st[st.length-1].d)+'</text>';return s+'</svg>'}
+function renderFeedback(){
+  const el=$('session'),ms=[...new Set(cur.exercises.flatMap(e=>(X[e.name]||{m:[]}).m))].filter(m=>!['Grip','Core','Shins'].includes(m));
+  cur.feedback=cur.feedback||{pump:{},sore:{}};cur.feel=cur.feel||{};const st=setsDone();
+  let h='<section class="card"><h3>How did it go?</h3><p class="msg">'+st.d+' of '+st.t+' sets'+(st.vol>0?' · '+st.vol.toLocaleString()+' kg':'')+'. Two quick taps per muscle help your coach set next week\'s volume.</p>';
+  ms.forEach(m=>{h+='<div class="q"><span><b style="color:var(--fg)">'+m+'</b> · pump today</span><div class="chips">'+[['low','Low','w'],['good','Good','g'],['great','Great','g']].map(([v,t,c])=>'<button class="chip '+c+'" data-fb="pump" data-m="'+m+'" data-v="'+v+'" aria-pressed="'+(cur.feedback.pump[m]===v)+'">'+t+'</button>').join('')+'</div>'+
+    '<span>Sore from last time going in?</span><div class="chips">'+[['none','Not at all','g'],['healed','Healed just in time','g'],['still','Still sore','r']].map(([v,t,c])=>'<button class="chip '+c+'" data-fb="sore" data-m="'+m+'" data-v="'+v+'" aria-pressed="'+(cur.feedback.sore[m]===v)+'">'+t+'</button>').join('')+'</div></div>'});
+  if(FB_ACHES.length)h+='<h2 style="margin-top:6px">Aches</h2>'+FB_ACHES.map(([k,t])=>'<div class="feel"><span>'+t+'</span><div class="chips">'+[['fine','Fine','g'],['sore','Sore','w'],['pain','Pain','r']].map(([v,tt,c])=>'<button class="chip '+c+'" data-fb="feel" data-m="'+k+'" data-v="'+v+'" aria-pressed="'+(cur.feel[k]===v)+'">'+tt+'</button>').join('')+'</div></div>').join('');
+  h+='<input id="fnote" placeholder="'+FB_NOTE+'" value="'+esc(cur.note||'')+'"><button class="primary" id="saveW">Save workout</button><button class="ghost" id="backW">Back to workout</button><p class="msg" id="smsg" role="status"></p></section>';
+  el.innerHTML=h;
+  el.querySelector('.card').addEventListener('click',e=>{const b=e.target.closest('button[data-fb]');if(!b)return;const f=b.dataset.fb,m=b.dataset.m,v=b.dataset.v;
+    const o=f==='feel'?cur.feel:cur.feedback[f];o[m]=o[m]===v?undefined:v;
+    b.parentElement.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(o[m]===x.dataset.v)))});
+  $('saveW').onclick=()=>{cur.note=$('fnote').value.trim();const s=setsDone();finishSave(s.d>=s.t?'done':'partial')};
+  $('backW').onclick=()=>{mode='live';renderSession()};
+}
+function addonHtml(){if(!cur||cur.key!=='C'||cur.express)return'';const A=addonList(),trio=A.length<ADDON.length,c=cur.checked||{},n=A.filter((_,i)=>c['addon-'+i]).length;
+  return'<section class="card wu" id="addoncard"><div class="head"><h2>'+(trio?'After the cardio · core · 5 min':'After the cardio · core + grip · 15 min')+'</h2><span class="badge '+(n>=A.length?'done':'open')+'" id="addonbadge">'+n+'/'+A.length+'</span></div><p class="msg" style="margin:0">'+(trio?'Three core moves, about 5 minutes. Key in your best side plank so your coach can track it.':'Moved here from the lifting days so those finish by 8:00. Key in your best set for the timed and grip work so your coach can track it.')+'</p>'+A.map((x,i)=>tickRow(x,'addon-'+i,'data-chk',c['addon-'+i])+(x[3]?adlHtml(i,x[3]):'')).join('')+'</section>'}
+function rvHalf(x){return(Math.floor(x)||(x%1?'':'0'))+(x%1?'½':'')}
+function renderAll(full){RENDER_EXTRA.forEach(f=>{try{f()}catch(e){}});renderTop();renderGame();if(full||!readyBusy)renderReady();if(full)renderSession();renderReqs();try{renderInsights()}catch(e){}if(view==='prog')renderProgress()}
+function rotNudge(names){if(!ROT_NUDGE)return'';if(!names||!names.length)return'';const i=rotIdeas().find(o=>names.includes(o.cur));if(!i)return'';
+  return'<div class="note rotn rotc"><span><b>Coach idea</b> · swap '+esc(i.cur)+' for '+esc(i.to)+'<small>'+esc(i.why)+'</small></span>'+rotBtns(i,'Not now')+'</div>'}
+function parkedHtml(){if(!PARKED_CARD)return'';let p=null;try{p=JSON.parse(localStorage.getItem('parked')||'null')}catch(e){}if(!p||!p.text)return'';
+  if(!(p.date===iso(addDays(today,-1))&&new Date().getHours()<14))return'';
+  return'<section class="card"><div class="head"><h2>Parked last night</h2><button type="button" class="linkbtn" id="parkClear">Clear</button></div><p class="parked">'+esc(p.text)+'</p></section>'}
+function rvBars(weeks){const W=340,H=140,n=weeks.length,bw=(W-40)/n;let s='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Workouts per week">';
+  const big=RV_BIG_WEEKS&&weeks.some(b=>b.planned>5),u=big?14:18; /* 7-session weeks from 16 Nov: a shorter unit so the bars stay inside the chart */
+  const y=v=>H-24-v*u;(big?[3,5,7]:[3,5]).forEach(v=>{s+='<line x1="30" x2="'+(W-6)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--line)" stroke-dasharray="4 3"/><text x="24" y="'+(y(v)+4)+'" text-anchor="end">'+v+'</text>'});
+  weeks.forEach((b,i)=>{const x=34+i*bw+bw*0.18,h=b.done*u;s+='<rect x="'+x+'" y="'+(H-24-b.planned*u)+'" width="'+(bw*0.64)+'" height="'+(b.planned*u)+'" rx="4" fill="var(--soft)"/><rect x="'+x+'" y="'+(H-24-h)+'" width="'+(bw*0.64)+'" height="'+Math.max(h,2)+'" rx="4" fill="'+(b.key>=3?'var(--done)':'var(--warn)')+'"/><text x="'+(x+bw*0.32)+'" y="'+(H-28-h)+'" text-anchor="middle" font-weight="600">'+b.done+'/'+b.planned+'</text><text x="'+(x+bw*0.32)+'" y="'+(H-8)+'" text-anchor="middle">Week '+b.w+'</text>'});
+  return s+'</svg><div class="legend"><span><i style="background:var(--done)"></i>all 3 must-dos</span><span><i style="background:var(--warn)"></i>a must-do missed</span><span><i style="background:var(--soft)"></i>planned</span></div>'}
+async function persist(now){
+  if(!cur||cur.practice)return;try{localStorage.setItem('draft-'+cur.date,JSON.stringify(bodyOf(cur)))}catch(e){}
+  const sv=t=>{saveState=t;const el=$('svst');if(el){el.textContent=t;el.classList.toggle('kunsaved',SAVE_OFF.red&&t===SAVE_OFF.st)}};sv('Saving…');
+  clearTimeout(saveT);const run=async()=>{if(!db){sv('Kept on this phone');return}try{const b=bodyOf(cur);await db.doc('log/'+cur.date).set(b);logs[cur.date]=b;sv('Saved ✓')}catch(e){sv(SAVE_OFF.st);const m=$('smsg');if(m){m.className='msg err';m.textContent=SAVE_OFF.msg}}};
+  if(now)return run();saveT=setTimeout(run,1500);
+}
+function cardioPreviewHtml(r){const row=PREVIEW_ROWS==='dose-right'?(a,b,c,d)=>'<div class="pl"><div class="l"><b>'+esc(a)+'</b>'+(b?'<small>'+esc(b)+'</small>':'')+'</div>'+(d?'<span class="num" style="white-space:nowrap;font-weight:600">'+esc(d)+'</span>':'')+'</div>':(a,b,c,d)=>'<div class="pl pl2"><b>'+esc(a)+'</b>'+(d?'<span class="num pdose">'+esc(d)+'</span>':'')+(b?'<small>'+esc(b)+'</small>':'')+'</div>';
+  const wl=warmList(),ml=mobList(cur.key),add=cur.key==='C'&&!cur.express;let h='<section class="card"><div class="head"><h2>The session</h2>'+evb(r.iv?'int4x4':cur.key==='L'?'longrun':'polar')+'</div><div class="plist">';
+  if(r.iv){h+=row('Easy warm-up','Z1–Z2, the interval timer counts it','','10 min');
+    h+=row(r.iv+' × 4 min hard','Z5 · 165–174 bpm. Can\'t talk','',r.iv+' × 4 min');
+    h+=row('3 min easy between each','Z2 · about 128 bpm','',(r.iv-1)+' × 3 min');
+    h+=row('Cool-down','Z1, easy spin or walk','','5 min');
+    h+='</div><p class="msg" style="margin:0">'+esc(r.info.split('.')[0])+'.</p><div class="plist">'}
+  else h+=row(r.name,r.info,'',r.mins+' min');
+  if(add){const A=addonList();h+='</div><h3 class="sub">'+(A.length<ADDON.length?'After the cardio · core · 5 min':'After the cardio · core + grip · 15 min')+'</h3><div class="plist">'+A.map(x=>row(x[0],x[2],'',x[1])).join('')}
+  h+='</div><h3 class="sub">Warm-up first · 3 min</h3><p class="msg" style="margin:0">'+wl.map(x=>esc(x[0])).join(' · ')+'</p>';
+  h+='<h3 class="sub">Cool-down after · 6 min</h3><p class="msg" style="margin:0">'+ml.map(x=>esc(x[0])).join(' · ')+'</p>';
+  return h+'</section>'}
+function calWeekHtml(){const ws=wkStart(CAL.anchor),w=weekOf(ws),we=addDays(ws,6);let n=0,dn=0;
+  const rows=[...Array(7)].map((_,i)=>{const d=addDays(ws,i),f=calInfo(d);let[sc,st]=calStatus(f,d);if(f.p.type!=='rest'&&!f.p.optional){n++;if(f.st==='done'||f.st==='partial')dn++}
+    const mr=mvRow(d,f);if(mr&&mr.chip)[sc,st]=mr.chip;else if(mr)st=st||'';const l=logs[iso(d)],mf=l&&l.movedFrom&&l.hostKey?'Moved from '+l.movedFrom:'';
+    return'<button type="button" class="cwr'+(f.p.type==='rest'?' rest':'')+(f.today?' today':'')+(mr?mr.cls:'')+'" data-cal="'+iso(d)+'"'+(mr&&mr.cls===' off'?' aria-disabled="true"':'')+' style="--ty:'+CTY[f.ty]+'" aria-label="'+DN[d.getDay()]+' '+short(d)+': '+esc(f.p.title)+(st?', '+st:'')+(mr&&mr.warn?', '+mr.warn:'')+'"><span class="cd"><small>'+DN[d.getDay()]+'</small><b>'+d.getDate()+'</b></span><span class="ct"><b>'+esc(f.p.title)+(f.p.optional?' (optional)':'')+'</b>'+(mf?'<small>'+esc(mf)+'</small>':'')+(f.det?'<small>'+esc(f.det)+'</small>':'')+(mr&&mr.warn?'<small class="mvw">'+esc(mr.warn)+'</small>':'')+'</span>'+(st?'<span class="cst '+sc+'">'+st+'</span>':'<span></span>')+'</button>'}).join('');
+  const nav='<div class="calnav"><button type="button" data-calnav="-1" aria-label="Previous week">‹</button><div><b>'+(w<1?'Before week 1':weekLabel(w))+'</b><small>'+short(ws)+' – '+short(we)+'</small></div><button type="button" data-calnav="1" aria-label="Next week">›</button></div>';
+  const mvb=CAL.mv?'<div class="mvbar" role="status"><b>'+(CAL.mv.src?'Move '+esc(mvTitle(mvKey(parse(CAL.mv.src)),parse(CAL.mv.src)))+' to which day?':'Tap the session to move')+'</b><button type="button" class="ghost" data-mv="x">Cancel</button></div>':'';
+  const canMv=!CAL.mv&&db&&[...Array(7)].some((_,i)=>mvCanSrc(addDays(ws,i))),canRs=!CAL.mv&&db&&mvResetOk(ws);
+  const foot=(canMv||canRs)?'<div class="mvfoot">'+(canMv?'<button type="button" data-mv="start">Move a session</button>':'')+(canRs?'<button type="button" class="ghost" data-mv="reset">Put this week back</button>':'')+'</div>':'';
+  return nav+mvb+'<div class="cwk">'+rows+'</div>'+(CAL.mv&&CAL.mv.dst?mvConfirmHtml():'')+'<p class="cwsum">'+(n?dn+' of '+n+' sessions done'+(light(w)?' · lighter week':''):'No sessions this week')+((()=>{for(let i=0;i<7;i++){const x=addDays(ws,i);if(isCheckDay(x))return' · 4-week check-in on '+x.toLocaleDateString('en-GB',{weekday:'long'})}return''})())+(RACE&&w>=1&&w<=RACE_WEEKS?' · '+Math.max(0,dayDiff(parse(RACE),today))+' days to race day':'')+'</p>'+foot}
+function renderReview(){
+  const el=$('view-review');let L=logs,rep=blockRep,T=targets||RV_DEFAULT_T,w1,w2,isS=rvMode==='sample';
+  if(isS){const s=sampleData();L=s.L;rep=s.rep;T=s.prev;w1=1;w2=4}
+  else if(rvMode==='latest'&&blockRep&&blockRep.weeks){w1=blockRep.weeks[0];w2=blockRep.weeks[1];T=blockRep.graded||RV_DEFAULT_T}
+  else{const wk=Math.max(1,weekOf(today));w1=Math.floor((wk-1)/4)*4+1;w2=w1+3;rep=null;T=(blockRep&&blockRep.targets)||RV_DEFAULT_T}
+  const c=rvCompute(L,w1,w2),sc=rvScore(c,T),avg=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):null;
+  const grade=rep&&rep.grade||(sc.hit>=6?'A':sc.hit>=5?'B+':sc.hit>=4?'B':sc.hit>=3?'C':'D');
+  let h='<button class="back" id="rvBack">‹ Progress</button>'+(isS?'<div class="note trim">Example review with made-up numbers for weeks 1–4. Your real one lands on Sunday 8 Nov, after week 4.</div>':rvMode==='live'?'<div class="note">This block so far. It updates live as you log, and your coach grades it after week '+w2+'.</div>':'');
+  h+='<section class="hero rvh"><div class="hey">Block review · weeks '+w1+'–'+w2+(isS?' · example':'')+'</div><div class="grade"><b>'+esc(grade)+'</b><div><h1 class="ht">'+esc(rep&&rep.title||'Weeks '+w1+'–'+w2)+'</h1><span>'+rvHalf(sc.hit)+' of '+sc.n+' targets hit</span></div></div>'+(rep&&rep.text?'<p>'+esc(rep.text)+'</p>':'<p>Your coach adds the verdict, causes and changes at the end of the block. The numbers below update live.</p>')+'</section>';
+  h+='<section class="card"><h2>Scorecard vs targets</h2>'+sc.html+'</section>';
+  h+='<div class="stats"><div class="stat"><b class="num">'+c.best+'</b><span>best streak</span></div><div class="stat"><b class="num">'+c.prs+'</b><span>PRs</span></div><div class="stat"><b class="num">'+(avg(c.dur)||'–')+'</b><span>avg minutes</span></div></div>';
+  h+='<section class="card"><h2>Consistency</h2>'+rvBars(c.weeks)+'<h3 class="sub">Misses by day</h3>'+rvDow(c.dow)+'</section>';
+  h+='<section class="card"><h2>Start times</h2><p class="msg" style="margin:0">'+rvStartLine(c,w1,w2)+'</p>'+rvStarts(c.starts)+'</section>';
+  h+='<section class="card"><h2>Strength · change this block</h2>'+rvLifts(c.lifts)+'</section>';
+  h+='<section class="card"><h2>Leg volume per week</h2>'+rvLegs(c.legs)+'</section>';
+  h+='<section class="card"><h2>Long run vs plan</h2>'+rvRuns(c.longR)+'<h3 class="sub">'+(CMODE_A[c.hr.mode]||'Easy cardio')+' heart rate</h3>'+(c.hr.length>1?'<div class="big"><b class="num">'+(c.hr[c.hr.length-1].y-c.hr[0].y)+' bpm</b><span>same easy effort, '+c.hr[0].y+' → '+c.hr[c.hr.length-1].y+' bpm</span></div>'+lineChart(c.hr,{label:(CMODE_A[c.hr.mode]||'Easy cardio')+' heart rate'}):'<p class="empty">Log heart rate on easy cardio to see your engine grow.</p>')+'</section>';
+  {const S0=iso(addDays(new Date(START),7*(w1-1))),E0=iso(addDays(new Date(START),7*w2-1));h+='<section class="card"><h2>Exercise habits this block</h2>'+habitsHtml(exHabits(L,S0,E0),6)+'</section>'}
+  h+='<section class="card"><h2>Body and habits</h2><div class="score">'+
+    '<div class="srow"><span class="sk">🔥</span><span class="sl">Warm-ups done</span><b class="num">'+c.wu+'/'+c.wuN+'</b></div>'+
+    '<div class="srow"><span class="sk">🧘</span><span class="sl">Cool-downs done</span><b class="num">'+c.cd+'/'+c.cdN+'</b></div>'+
+    '<div class="srow"><span class="sk">⚠</span><span class="sl">Sore days<small>back '+c.aches.back+' · knees '+c.aches.knees+' · shoulder '+c.aches.shoulder+'</small></span><b class="num">'+(c.aches.back+c.aches.knees+c.aches.shoulder)+'</b></div>'+
+    (c.trs.length?'<div class="srow"><span class="sk">⌚</span><span class="sl">Avg Training Readiness</span><b class="num">'+avg(c.trs)+'</b></div>':c.hrvs&&c.hrvs.length?'<div class="srow"><span class="sk">⌚</span><span class="sl">Avg overnight HRV</span><b class="num">'+avg(c.hrvs)+' ms</b></div>':'')+'</div></section>';
+  if(rep&&(rep.wins||rep.problems||rep.changes)){
+    if(rep.wins&&rep.wins.length)h+='<section class="card"><h2>What worked</h2><ul class="rvl">'+rep.wins.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></section>';
+    if(rep.problems&&rep.problems.length)h+='<section class="card"><h2>What cost you, and the fix</h2>'+rep.problems.map(p=>'<div class="prob"><b>'+esc(p.issue)+'</b><small><em>Why:</em> '+esc(p.cause)+'</small><small><em>Fix:</em> '+esc(p.fix)+'</small></div>').join('')+'</section>';
+    if(rep.changes&&rep.changes.length)h+='<section class="card"><h2>Plan changes for next block</h2><ul class="rvl">'+rep.changes.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></section>';
+    const nt=rep.targets;if(nt)h+='<section class="card"><h2>Your targets for weeks '+(w2+1)+'–'+(w2+4)+'</h2><p class="msg" style="margin:0">Your coach checks these every day and grades you on them next block.</p><div class="score">'+
+      [['Workouts','≥ '+nt.workouts+' of '+[1,2,3,4].reduce((a,i)=>a+weekGoal(weekSun(w2+i)),0)],['Must-dos','all '+nt.mustdos],[START_LABEL,'≥ '+Math.round(nt.early*100)+'% of sessions'],['Warm-up','≥ '+Math.round(nt.warmup*100)+'%'],['Cool-down','≥ '+Math.round(nt.cooldown*100)+'%']].concat(nt.liftGoals||[]).map(r=>'<div class="srow"><span class="sk">◎</span><span class="sl">'+esc(r[0])+'</span><b class="num">'+esc(r[1])+'</b></div>').join('')+'</div></section>'}
+  el.innerHTML=h;$('rvBack').onclick=()=>setView('prog')}
+function calMonthHtml(){const a=CAL.anchor,m0=new Date(a.getFullYear(),a.getMonth(),1),m1=new Date(a.getFullYear(),a.getMonth()+1,0);let h='<div class="cmo" role="grid" aria-label="'+MN[m0.getMonth()]+' '+m0.getFullYear()+'"><span class="ch2">Wk</span>'+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>'<span class="ch2">'+x+'</span>').join('');
+  let n=0,dn=0;for(let ws=wkStart(m0);ws<=m1;ws=addDays(ws,7)){const w=weekOf(ws);h+='<span class="cwn">'+calWeekMark(w)+'</span>';
+    for(let i=0;i<7;i++){const d=addDays(ws,i),f=calInfo(d),out=d.getMonth()!==m0.getMonth(),mk=f.st==='done'?'✓':f.st==='recovery'&&RECOVERY_MOON?'<svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>':f.st==='partial'||f.st==='recovery'?'~':f.st==='skipped'||f.st==='missed'?'✕':'';
+      if(!out&&f.p.type!=='rest'&&!f.p.optional){n++;if(f.st==='done'||f.st==='partial')dn++}
+      h+='<button type="button" class="cc'+(f.p.race?' race':f.p.type==='rest'?' rest':'')+(out?' out':'')+(f.today?' today':'')+' '+f.st+'" data-cal="'+iso(d)+'" aria-pressed="'+(CAL.pick===iso(d))+'" style="--ty:'+CTY[f.ty]+'" aria-label="'+DN[d.getDay()]+' '+short(d)+': '+esc(f.p.title)+(CST[f.st]?', '+CST[f.st]:'')+'"><span class="n">'+d.getDate()+'</span>'+(f.tag?'<span class="tg">'+f.tag+'</span>':'')+(mk?'<span class="mk" aria-hidden="true">'+mk+'</span>':'')+'</button>'}}
+  h+='</div>';
+  const nav='<div class="calnav"><button type="button" data-calnav="-1" aria-label="Previous month">‹</button><div><b>'+['January','February','March','April','May','June','July','August','September','October','November','December'][m0.getMonth()]+' '+m0.getFullYear()+'</b><small>'+(n?dn+' of '+n+' sessions done':'Nothing planned')+'</small></div><button type="button" data-calnav="1" aria-label="Next month">›</button></div>';
+  const leg=CAL_LEGEND;
+  let det='<div class="cdet" id="caldet"><small>Tap a day to see the session.</small></div>';
+  if(CAL.pick){const d=parse(CAL.pick),f=calInfo(d),[,st]=calStatus(f,d);det='<div class="cdet" id="caldet"><b>'+DN[d.getDay()]+' '+short(d)+' · '+esc(f.p.title)+(f.p.optional?' (optional)':'')+'</b>'+(f.det?'<small>'+esc(f.det)+'</small>':'')+(st?'<small>'+st+'</small>':'')+'<button type="button" class="primary" data-calopen="'+CAL.pick+'">Open this day</button>'+(mvCanSrc(d)?'<button type="button" data-mv="from" data-d="'+CAL.pick+'">Move this session</button>':'')+'</div>'}
+  return nav+h+leg+det}
+function mvConfirmHtml(){const m=CAL.mv,s=parse(m.src),d=parse(m.dst),ks=mvKey(s),kd=mvKey(d),ts=mvTitle(ks,s),td=mvTitle(kd,d),W=mvWarn(s,d);
+  const chk=[s,d].filter(isCheckDay)[0];
+  return'<div class="mvok" id="mvok"><h4 tabindex="-1">'+esc(ts)+' to '+esc(mvLbl(d))+'?</h4>'+
+    (kd==='S'?'<p>'+esc(mvLbl(s))+' becomes a rest day.</p>':'<p>'+esc(td)+' moves to '+esc(mvLbl(s))+'.</p>')+
+    (W.length?'<p class="w">Back to back: '+esc(W.join('; '))+'. Your plan keeps '+MV_APART+' apart so your legs recover.</p>':'')+
+    (chk?'<p class="n">The 4-week check-in stays on '+esc(mvLbl(chk))+'.</p>':'')+
+    '<p class="n">Same exercises and weights. Your coach '+MV_COACH+'</p>'+
+    '<div class="row"><button type="button" class="primary" data-mv="go">'+(W.length?'Move anyway':'Move it')+'</button><button type="button" data-mv="back">Pick another day</button></div></div>'}
+function winData(status,g0,g1){
+  const lift=cur.type==='lift',st=setsDone(),pr=cur.practice,stats=[],d=(cur.run&&cur.run.done)||{};
+  if(lift){if(cur.durationMin)stats.push([cur.durationMin,'min']);stats.push([st.vol,'kg moved']);stats.push([st.d+'/'+st.t,'sets'])}
+  else{if(d.mins)stats.push([+d.mins,'min']);if(d.km)stats.push([+d.km,'km']);if(d.hr)stats.push([+d.hr,'avg bpm'])}
+  const span=g1.next-g1.floor,p1=Math.max(3,Math.min(100,(g1.xp-g1.floor)/span*100)),p0=g1.lv>g0.lv?0:Math.max(0,Math.min(p1,(g0.xp-g1.floor)/span*100));
+  const ex=cur.express||/Express$/.test(cur.title||''),iv=!lift&&cur.run&&cur.run.iv?+cur.run.iv:0;
+  const scene=lift?(WIN_SCENE[cur.key]||WIN_SCENE._):(()=>{const m=cmode(cur,parse(cur.date));if(m==='bike')return'bike';if(m!=='run')return'park';return cur.key==='L'?'long':iv?'track':'park'})();
+  const title=pr&&lift?'Practice done':lift?'Workout done':cur.key==='L'?'Long run done':iv?'Intervals done':cur.key==='T'?'Bonus run done':'Cardio done';
+  const tag=pr?(lift?PRACTICE_DAY+' is the real one':'Practice · nothing saved'):ex?'Express · streak safe':status==='partial'?'Every set counts':g1.streak>1?'Streak '+g1.streak:'';
+  /* milestones: moments that only happen once get the gold version */
+  let mile='';
+  if(!pr){const dd=parse(cur.date),w=weekOf(dd);
+    if(g0.workouts===0&&g1.workouts>=1)mile='First session of the plan';
+    if(cur.key==='L'&&+d.mins>=60&&!Object.keys(logs).some(k=>k!==cur.date&&logs[k].key==='L'&&logs[k].status==='done'&&+(((logs[k].run||{}).done||{}).mins)>=60))mile='First 60-minute long run';
+    if(w>=1&&w%4===0){let last=true;for(let i=mdow(dd)+1;i<7;i++){const p=effPlan(addDays(dd,i-mdow(dd)));if(p.type!=='rest'&&!p.optional){last=false;break}}
+      if(last)mile='Block '+(w/4)+' complete · review lands Sunday'}}
+  const fx=lift&&FIN_EXTRA?finExtra(st,g1,pr):null;
+  return{kind:lift?'lift':'run',fx,scene,title,tag,mile,kicker:(cur.title||'').replace(/ · Express$/,'')+(fx?fx.kick:''),stats,prs:(cur.prs||[]).slice(0,3),plates:status==='partial'||ex?2:3,
+    rounds:iv,mins:+d.mins||(cur.run&&cur.run.mins)||0,km:+d.km||0,
+    xp:pr?0:Math.max(0,g1.xp-g0.xp),lv:g1.lv,lvTitle:g1.title,levelUp:!pr&&g1.lv>g0.lv,p0,p1,streak:g1.streak,practice:!!pr,
+    plate:g1.lv>=7?'r':g1.lv>=5?'b':g1.lv>=3?'y':'g',ghost:pr?null:ghostOf(logs[cur.date]),story:'',reward:!pr&&g1.lv>g0.lv?rewardFor(g1.lv):'',lvFrom:g0.lv}}
+function renderSummary(el){
+  const st=setsDone(),hist=summaryPrev(cur);
+  const prev=hist?logs[hist]:null,s=streaks();
+  const label={done:'Done',partial:'Partly done',skipped:'Skipped',recovery:'Recovered'}[cur.status]||'Saved';
+  let h='<section class="card"><div class="head"><h3>'+esc(cur.title)+'</h3><span class="badge '+cur.status+'">'+label+'</span></div>';
+  if(cur.fromReply)h+='<p class="msg">Logged from your reply to the coach'+(cur.note?': '+esc(cur.note):'')+'.</p>';
+  if(cur.status==='skipped')h+='<p class="msg">Skipped. Tomorrow\'s plan makes room for it so your must-dos still happen.</p>';
+  else if(CLASS_DAYS&&cur.class&&Array.isArray(cur.class.blocks)){h+=classHtml(cur)}
+  else if(cur.type==='lift'){
+    h+='<div class="sum num"><div><b>'+(cur.durationMin!=null?cur.durationMin+' min':'–')+'</b><span>duration</span></div><div><b>'+st.vol.toLocaleString()+'</b><span>kg volume'+(VOL_LINE?'':volCmp(cur,prev))+'</span></div><div><b>'+st.d+'/'+st.t+'</b><span>sets</span></div></div>'+(VOL_LINE?(vc=>vc?'<p class="sumn">Volume'+esc(vc.replace(/^ · /,': '))+'</p>':'')(volCmp(cur,prev)):'');   /* 19 Nov: the streak is already at the top of the page */
+    if((cur.skippedEx&&cur.skippedEx.length)||(cur.cutEx&&cur.cutEx.length))h+='<div class="note trim">'+(cur.skippedEx.length?'Not done today: <b>'+cur.skippedEx.map(esc).join(', ')+'</b>. ':'')+(cur.cutEx.length?'Cut short: '+cur.cutEx.map(esc).join(', ')+'. ':'')+SKIP_NOTE+'</div>';
+    (cur.prs||[]).forEach(p=>{h+='<div class="pr"><b>PR</b>'+esc(p.name)+' · est. 1RM '+p.e1+' kg</div>'});
+    {const setsOf=e=>{const w=e.sets.filter(x=>x.t!=='W'&&x.done),x=X[e.name]||{};return (w.length?w.map(x2=>(x2.t==='D'?'drop ':'')+(x.unit==='t'?(x.bw?'':r1(x2.kg)+' kg · ')+fmtT(x2.reps):x.bw||!+x2.kg?(x.add&&!x.bw?'BW×':'')+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''):r1(x2.kg)+'×'+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''))).join(', '):'not done')+(e.ss?' · superset with '+esc(e.ss):'')};
+     const gh=cur.practice?null:ghostOf(logs[cur.date]||cur),inG=new Set(gh?gh.rows.map(r=>r.name):[]);let gx=gh?ghostHtml(gh,false):'';
+     /* 19 Nov: a lift in the ghost race shows its sets under its name there, so it isn't listed twice */
+     (cur.exercises||[]).forEach(e=>{if(!inG.has(e.name))return;const a='<div class="gr"><span>'+esc(e.name)+'</span>';gx=gx.replace(a,'<div class="gr"><span>'+esc(e.name)+'<small class="gsets num">'+setsOf(e)+'</small></span>')});
+     h+=gx;const rest=(cur.exercises||[]).filter(e=>!inG.has(e.name));
+     if(rest.length)h+='<div class="plist">'+rest.map(e=>'<div class="pl"><div class="l"><b>'+esc(e.name)+'</b><small class="num">'+setsOf(e)+'</small></div></div>').join('')+'</div>'}
+  }else if(cur.type==='cardio'&&cur.run){const d=cur.run.done||{};h+='<div class="sum num"><div><b>'+(d.mins||'–')+' min</b><span>time</span></div><div><b>'+(d.hr||'–')+'</b><span>avg bpm</span></div><div><b>'+(d.km||'–')+'</b><span>km</span></div></div>'}
+  else h+='<p class="msg">Logged.</p>';
+  if(WATCH_CARD&&!cur.practice&&cur.status!=='skipped')h+=stvHtml(cur.date);
+  if(!cur.practice)h+='<p class="msg" style="color:var(--done)">'+(db?SAVED_MSG:'Kept on this phone. Open the tracker in the Claude app to sync.')+'</p>';
+  h+=(CLASS_DAYS&&cur.class?'':'<button id="editW">Edit this log</button>')+'</section>';
+  if(cur.status!=='skipped'&&cur.type==='cardio')h+=addonHtml();
+  if(cur.status!=='skipped'&&cur.type!=='rest')h+=mobHtml();
+  el.innerHTML=h;if($('editW'))$('editW').onclick=()=>{mode=cur.type==='lift'&&cur.status!=='skipped'?'live':'preview';if(cur.status==='skipped'){cur=buildSession(sel)}else if(cur.type!=='lift'){cur.status='in_progress';cur.logOpen=true}renderSession()};
+}
+function renderRest(el){
+  const p=cur.plan||planFor(sel),future=sel>today;cur.checked=cur.checked||{};
+  let h='<section class="card'+(p.pre||!REST_EXTRAS?'':' restc')+'"><div class="head"><h3>'+esc(cur.title)+'</h3><span class="badge rest">'+(cur.recoverOf?'Recover':p.pre?'Soon':'Rest')+'</span></div>'+noteHtml();
+  if(p.pre)h+=prePlanHtml();
+  {const ck=cur.checks||[],mob=REST_EXTRAS&&ck.some(c=>/^Mobility routine/.test(c));
+   h+=ck.filter(c=>!(REST_EXTRAS&&/^Mobility routine/.test(c))).map(c=>'<label class="tick"><span>'+esc(c)+'</span><input type="checkbox" data-chk="'+slug(c)+'" '+(cur.checked[slug(c)]?'checked':'')+'></label>').join('');
+   if(mob)h+=restMobHtml()}
+  if(!future&&!p.pre)h+='<button class="primary" id="saveRest">'+(cur.recoverOf?'Done: recovery':'Done')+'</button>';
+  el.innerHTML=h+'<p class="msg" id="smsg"></p></section>'+(p.pre||!REST_EXTRAS?'':tomHtml());
+  if($('mobTg'))$('mobTg').onclick=()=>{const o=$('mobTg').getAttribute('aria-expanded')==='true';mobOpen=!o;renderSession()};
+  if($('tomGo'))$('tomGo').onclick=()=>go(addDays(sel,1));
+  if($('saveRest'))$('saveRest').onclick=()=>finishSave(cur.recoverOf?'recovery':'done');
+  el.querySelectorAll('button[data-prc]').forEach(b=>b.onclick=()=>{cur=buildSession(addDays(START,+b.dataset.prc));cur.practice=true;mode='preview';renderSession();window.scrollTo({top:0,behavior:'smooth'});toast('Practice mode · nothing is saved')});
+  if($('practice'))$('practice').onclick=()=>{cur=buildSession(addDays(START,PRACTICE_FROM));cur.practice=true;cur.status='in_progress';cur.startedAt=new Date().toISOString();cur.phase='warmup';mode='live';ensureAudio();renderSession();window.scrollTo({top:Math.max(0,$('session').offsetTop-8),behavior:'smooth'});toast('Practice mode · nothing is saved')};
+}
+function rvCompute(L,w1,w2){
+  const S=addDays(new Date(START),7*(w1-1)),E=addDays(new Date(START),7*w2-1),last=rvMode==='sample'?E:(E<today?E:today);
+  const weeks=[],dow=[0,0,0,0,0,0,0],starts=[],legs=[];let planned=0,done=0,must=0,mustP=0,early=0,startsN=0,pm=0,wu=0,wuN=0,cd=0,cdN=0,dur=[],prs=0,aches={back:0,knees:0,shoulder:0},trs=[],hrvs=[];
+  for(let w=w1;w<=w2;w++){const sun=addDays(new Date(START),7*(w-1));let wd=0,wk=0,wp=0;const lg={Quads:0,Hamstrings:0,Glutes:0,Calves:0};
+    for(let i=0;i<7;i++){const d=addDays(sun,i);if(d>last)break;const k=iso(d),p=effPlan(d,L),l=L[k];
+      if(l)(l.exercises||[]).forEach(e=>{const x=X[e.name];if(!x)return;const n=e.sets.filter(s=>s.t!=='W'&&s.done).length;x.m.forEach(m=>{if(lg[m]!=null)lg[m]+=n})});
+      if(p.type==='rest'||p.optional)continue;wp++;const ok=l&&['done','partial'].includes(l.status);
+      if(ok){wd++;if(['A','B',TXT.weekCounts].includes(p.key))wk++}else if(d<last||(l&&l.status==='skipped'))dow[d.getDay()]++;
+      if(['A','B',TXT.weekCounts].includes(p.key))mustP++;
+      if(l&&ok){if(l.startedAt){const t=new Date(l.startedAt),hh=t.getHours()+t.getMinutes()/60;const ot=startRule(k,hh);if(ot==='pm')pm++;else if(ot!==null){starts.push({d,h:hh,ok:ot});startsN++;if(ot)early++}}
+        if(l.warmup!=null){wuN++;if(Object.values(l.warmup).filter(Boolean).length>=3)wu++}else wuN++;
+        cdN++;if(l.mobility&&(MOBS[l.key]||MOBS.A).every((_,j)=>l.mobility[j]))cd++;
+        if(l.durationMin&&l.type==='lift')dur.push(l.durationMin);prs+=(l.prs||[]).length}
+      if(l&&l.feel)Object.keys(aches).forEach(a=>{if(['sore','pain'].includes(l.feel[a]))aches[a]++});
+      if(l&&l.readiness&&l.readiness.tr!=null)trs.push(l.readiness.tr);if(l&&l.readiness&&typeof l.readiness.hrv==='number')hrvs.push(l.readiness.hrv)}
+    weeks.push({w,done:wd,key:wk,planned:wp});legs.push({w,...lg});planned+=wp;done+=wd;must+=wk}
+  const lifts=RV_LIFTS.map(n=>{let f=null,l=null;Object.keys(L).sort().forEach(k=>{const d=parse(k);if(d<S||d>E)return;(L[k].exercises||[]).forEach(e=>{if(e.name!==n)return;let t=0,kg=0;e.sets.forEach(s=>{if(s.t!=='W'&&s.done){t=Math.max(t,e1rm(s.kg,s.reps));kg=Math.max(kg,s.kg||0)}});if(!t)return;if(!f)f={t,kg};if(!l||t>=l.t)l={t,kg}})});return f&&l?{n,f,l,pct:Math.round((l.t-f.t)/f.t*100)}:null}).filter(Boolean);
+  const longR=[],hr=[];Object.keys(L).sort().forEach(k=>{const d=parse(k);if(d<S||d>E)return;const l=L[k];if(l.status!=='done'||!l.run||!l.run.done)return;
+    if(l.key==='L')longR.push({w:weekOf(d),y:+l.run.done.mins,plan:longRun(weekOf(d))});if(l.run.done.hr&&(l.key==='L'||l.key==='T'||(l.key==='C'&&weekOf(d)<=4)))hr.push({x:short(d),y:+l.run.done.hr,m:cmode(l,d)})});
+  {const cnt={};hr.forEach(h=>cnt[h.m]=(cnt[h.m]||0)+1);const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];if(top){const keep=hr.filter(h=>h.m===top);hr.length=0;keep.forEach(h=>hr.push(h));hr.mode=top}}
+  let streak=0,best=0;for(let d=new Date(S);d<=last;d=addDays(d,1)){const p=effPlan(d,L);if(p.type==='rest'||p.optional)continue;const l=L[iso(d)];if(l&&['done','partial','recovery'].includes(l.status)){streak++;best=Math.max(best,streak)}else if(d<last)streak=0}
+  return{w1,w2,weeks,dow,starts,legs,planned,done,must,mustP,early,startsN,pm,wu,wuN,cd,cdN,dur,prs,aches,trs,hrvs,lifts,longR,hr,best}
+}
+function startIntervals(n,t0){ensureAudio();const ph=[['Warm-up, easy · Z1–Z2',600]];for(let i=1;i<=n;i++){ph.push(['Hard '+i+' of '+n+' · Z5 · 165–174 bpm',240]);if(i<n)ph.push(['Easy · Z2 · ~128 bpm',180])}ph.push(['Cool-down · Z1',300]);
+  /* bug sweep 9 Nov: phases now run on a fixed timeline from the start time, so a locked screen doesn't push them back, and a reload picks it up */
+  const ends=[];ph.reduce((a,p)=>{ends.push(a+p[1]);return a+p[1]},0);const start=t0||Date.now();
+  clearInterval(iv);iv=null;if(!cur.startedAt)cur.startedAt=new Date(start).toISOString();if(cur.ivStart!==start){cur.ivStart=start;persist()}
+  let last=-1;const up=()=>{if(!$('ivtime')){clearInterval(iv);iv=null;return}const el=(Date.now()-start)/1000;let i=ends.findIndex(e=>el<e);
+    if(i<0){clearInterval(iv);iv=null;$('ivtime').textContent='0:00';$('ivph').textContent='Done. Log it below';if(last>=0&&last<ph.length)beep();last=ph.length;return}
+    if(last>=0&&i!==last)beep();last=i;$('ivtime').textContent=fmtT(ends[i]-el);$('ivph').textContent=ph[i][0]};
+  up();if(last<ph.length)iv=setInterval(up,250);if($('ivgo'))$('ivgo').textContent='Restart';
+}
+async function endDay(){const pl=night.pl,L=nightList(pl),n=L.filter((_,i)=>night.t[i]).length,all=n>=L.length;
+  await saveNight();
+  night=null;mode='preview';loadSession();renderAll(true);
+  toast(all?'Cool-down done'+(pl.save?' · +10 XP':''):n?n+' of '+L.length+' stretches logged':'Cool-down closed')}
+/* 18 Nov 2026: indexed once per change to the log instead of re-scanning every logged day on each lookup (same results) */
+let HIX={logs:null,n:-1,sig:'',m:null};
+function histIndex(){const ks=Object.keys(logs),sig=ks.length+'|'+ks.reduce((a,k)=>a+((logs[k]&&logs[k].savedAt)||'')+(logs[k]&&logs[k].status||''),'');
+  if(HIX.logs===logs&&HIX.sig===sig)return HIX.m;const m={};
+  ks.sort().reverse().forEach(x=>{const seen=new Set();(logs[x].exercises||[]).forEach(e=>{if(!e||!e.slug||seen.has(e.slug))return;seen.add(e.slug);const s=(e.sets||[]).filter(s=>s.t!=='W'&&s.t!=='D'&&s.done);if(s.length)(m[e.slug]=m[e.slug]||[]).push({date:x,sets:s,prefat:!!e.prefat})})});
+  HIX={logs,sig,m};return m}
+function restSave(){try{rest.on?localStorage.setItem('restT',JSON.stringify({...rest,date:cur&&cur.date})):localStorage.removeItem('restT')}catch(_){}}
+function rbLabel(t){const l=$('rlabel');l.textContent=t;l.classList.toggle('long',String(t).length>30);rbH()}
+function rbH(){const r=$('restbar');if(r&&!r.hidden)document.documentElement.style.setProperty('--rbh',r.offsetHeight+'px')}
+function wakeOff(){try{if(WAKE.lock){WAKE.lock.release();WAKE.lock=null}}catch(e){}try{if(WAKE.vid){WAKE.vid.pause();WAKE.vid.removeAttribute('src');WAKE.vid.load();WAKE.vid.remove();WAKE.vid=null}}catch(e){WAKE.vid=null}}
+function startRest(sec,label){rest={on:true,end:Date.now()+sec*1000,total:sec,label:'Rest · next: '+label};$('restbar').hidden=false;rbLabel(rest.label);restSave();loop()}
+function stopRest(){rest.on=false;$('restbar').hidden=true;$('restbar').classList.remove('end');restSave()}
+function staleOpen(l){if(!l||l.status!=='in_progress')return false;const st=Date.parse(l.startedAt||'');if(st&&Date.now()-st<3*3600e3)return false;if(l.date<iso(today))return true;return st&&Date.now()-st>3*3600e3}
+function history(name,before){
+  const L=histIndex()[slug(name)]||[];return L.filter(h=>h.date<before);
+}
+function renderRecovery(){const card=$('reccard');if(!card)return;const R={};RMUS.forEach(m=>R[m]=recoveryOf(m));
+  const rows=RBOARD.map(m=>{const r=R[m]||recoveryOf(m),wk=sets7(m),fl=r.state==='untrained'?[]:recFlags(m,r,wk),win=(r.near||r.fresh)?72:48;return{m,r,wk,fl,win}})
+    .sort((a,b)=>(b.fl.length?1:0)-(a.fl.length?1:0)||RORD[a.r.state]-RORD[b.r.state]||RBOARD.indexOf(a.m)-RBOARD.indexOf(b.m));
+  const c={worked:0,recovering:0,ready:0},nf=rows.filter(x=>x.fl.length).length;rows.forEach(x=>{if(c[x.r.state]!=null)c[x.r.state]++});
+  $('rsum').innerHTML='<div><b class="num">'+c.ready+'</b><span><i class="rd ready"></i>Ready</span></div><div><b class="num">'+c.recovering+'</b><span><i class="rd recovering"></i>Recovering</span></div><div><b class="num">'+c.worked+'</b><span><i class="rd worked"></i>Worked</span></div>'+(nf?'<div class="rsflag"><b class="num">'+nf+'</b><span><i class="rd flag"></i>Watch</span></div>':'');
+  /* only muscles with something to watch get a full row; the rest fold into one line he can open */
+  const hot=rows.filter(x=>x.fl.length||x.r.state==='worked'||x.r.state==='recovering'),calm=rows.filter(x=>!hot.includes(x));
+  const rowHtml=({m,r,wk,fl,win})=>{const t=TARGET[m],st=r.state;
+    const pct=st==='worked'?Math.max(4,Math.min(100,r.hrs/(win-6)*100)):st==='recovering'?82:st==='ready'?100:0;
+    const lab=fl.length?'Watch':st==='worked'?'Ready in '+Math.max(1,win-6-r.hrs)+' h':RSTATE[st];
+    const last=st==='untrained'?'No sets logged yet':DN[parse(r.date).getDay()]+' · '+esc((r.title||'').replace(/ · Express$/,''))+' · '+r.sets+' set'+(r.sets>1?'s':'');
+    let body='';
+    if(fl.length)body+=fl.map(x=>'<div class="rflag">'+esc(x)+'</div>').join('');
+    if(st!=='untrained'){body+='<span>'+esc(RSTATE[st])+(st==='worked'?' until about '+Math.max(1,win-6-r.hrs)+' h from now ('+win+' h window, counted in training mornings)':'')+'. Last trained '+DN[parse(r.date).getDay()]+' '+short(parse(r.date))+': '+esc(r.exs.join(', '))+'.</span>';
+      body+=r.why.length?'<small>'+esc(r.why.join(' · '))+'</small>':'<small>'+r.hrs+' h since, outside its window and no soreness logged.</small>';
+      if(r.perf)body+='<small>That session vs the one before: '+r.perf.beat+' beat, '+r.perf.tie+' matched, '+r.perf.lost+' behind.</small>'}
+    body+='<small>Last 7 days: '+wk+' working set'+(wk===1?'':'s')+(t?' · range '+t[0]+(t[1]!==t[0]?'–'+t[1]:'')+(LEGM.includes(m)||m==='Glutes'?'':' (maintenance)'):'')+'.</small>';
+    const vol=t?'<span class="rvol"><span class="rvt"><em style="left:'+(t[0]/Math.max(t[1]*1.5,wk)*100)+'%;width:'+Math.max(2,(t[1]-t[0])/Math.max(t[1]*1.5,wk)*100)+'%"></em><i style="width:'+Math.min(100,wk/Math.max(t[1]*1.5,wk)*100)+'%"></i></span><span class="num">'+wk+'/'+t[0]+(t[1]!==t[0]?'–'+t[1]:'')+'</span></span>':'';
+    return'<details class="rrow '+st+(fl.length?' flag':'')+'"'+(m===recSel?' open':'')+' data-rm="'+m+'"><summary><span class="rn">'+m+'</span><span class="rs">'+esc(lab)+'</span>'+
+      '<span class="rtrack"><i style="width:'+pct+'%"></i></span><span class="rmeta"><span>'+last+'</span>'+vol+'</span></summary><div class="rbody">'+body+'</div></details>'};
+  const allReady=calm.every(x=>x.r.state==='ready');
+  $('rboard').innerHTML=hot.map(rowHtml).join('')+(calm.length?'<details class="rcalm"'+(calm.some(x=>x.m===recSel)?' open':'')+'><summary><span><b>'+(hot.length?calm.length+' more '+(allReady?'ready':'with nothing to watch'):'All '+calm.length+' muscles '+(allReady?'ready':'clear'))+'</b><small>'+calm.map(x=>x.m).join(' · ')+'</small></span><em>'+(hot.length?'Show':'Show all')+'</em></summary>'+calm.map(rowHtml).join('')+'</details>':'');
+  saveRecovery(R)}
+function doSwap(ei,to){const ex=cur.exercises[ei];if(!X[to])return;ssUnlink(ex);const work=ex.sets.filter(z=>z.t!=='W'),done=work.filter(z=>z.done).length,left=Math.max(1,work.length-done);
+  const ne=mkEx(to,left),from=ex.swappedFrom||ex.name,xf=X[from]||{m:[]},xt=X[to];ne.swappedFrom=from;if(ex.cg)ne.cg=ex.cg;if(ex.tg||ex.tg0)ne.tg0=ex.tg||ex.tg0;
+  const shared=(xt.m||[]).filter(m=>(xf.m||[]).includes(m)),rr=xt.lo+(xt.hi!==xt.lo?'–'+xt.hi:'');
+  ne.why='Instead of '+from+': works '+(shared.length?shared:xt.m).join(' and ').toLowerCase()+'. '+((xt.unit!=='t'&&(xt.lo!==xf.lo||xt.hi!==xf.hi))?'Reps change to '+rr+'. ':'')+(xt.rest!==xf.rest?'Rest '+fmtT(xt.rest)+'. ':'')+ne.why;
+  if(done){ex.sets=ex.sets.filter(z=>z.done);ex.cutForSwap=true;cur.exercises.splice(ei+1,0,ne)}else cur.exercises[ei]=ne;
+  swapOpen=-1;picker=null;persist();renderSession();toast('Swapped to '+to)}
+function setPT(t){progTab=t;$('view-prog').dataset.tab=t;document.querySelectorAll('#ptabs [data-pt]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.pt===t)));try{localStorage.setItem('progTab',t)}catch(e){}
+  try{$('ptabs').dataset.on=t;let i=0;document.querySelectorAll('#view-prog>section').forEach(x=>{if(x.dataset.pg===t){x.style.animationDelay=Math.min(i,4)*45+'ms';i++}else x.style.animationDelay=''})}catch(e){}}
+function fitHt(){document.querySelectorAll('.ht').forEach(el=>{if(!el.children.length&&/ · /.test(el.textContent))el.textContent=el.textContent.replace(/ · /g,'\u00a0· ');el.style.fontSize='';let fs=parseFloat(getComputedStyle(el).fontSize)||40,n=0;{const cap=el.textContent.length>14?46:/\s/.test(el.textContent.trim())?60:80;if(fs>cap){fs=cap;el.style.fontSize=fs+'px'}}while(el.scrollWidth>el.clientWidth+1&&fs>20&&n<30){fs-=2;n++;el.style.fontSize=fs+'px'}})}
+function renderInsights(){const el=$('c-ins'),I=insItems();
+  if(el)el.innerHTML=I.length?I.map(insHtml).join('')+'<p class="msg" style="margin:0">Updated '+(insights.date?short(parse(insights.date)):'')+' by '+INS_BY+', from your check-ins, workouts and history. Patterns in your own data, not proof.</p>':'<p class="empty">Each morning your coach scans your check-ins, workouts and history for patterns: what helps your sessions, what derails them, and what\'s trending. What it finds, and what it\'s doing about it, shows here.</p>';
+  const t=$('insToday');if(!t)return;const pp=propPending()[0];
+  if(pp&&mode==='preview'&&dayDiff(sel,today)===0){t.innerHTML='<div class="note insnote"><span><b>Your coach suggests:</b> '+esc(pp.title||TECH[pp.technique][0])+'. It only starts if you say yes.</span><button type="button" class="linkb" id="insMore" style="align-self:flex-start">See the suggestion</button></div>';$('insMore').onclick=()=>{setPT('coach');setView('prog');setTimeout(()=>{try{$('propcard').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}},80)};return}const top=I.find(i=>i.kind==='risk'||i.kind==='watch');
+  t.innerHTML=top&&mode==='preview'&&dayDiff(sel,today)===0?'<div class="note '+(top.kind==='risk'?'recover':'trim')+' insnote"><span><b>Coach is watching:</b> '+esc(top.title)+(top.action?'. '+esc(top.action):'')+'</span><button type="button" class="linkb" id="insMore" style="align-self:flex-start">See the watchlist</button></div>':'';
+  const m=$('insMore');if(m)m.onclick=()=>{setPT('coach');setView('prog');setTimeout(()=>{try{$('inscard').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}},80)}}
 /* this app's wording for shared functions (src/shared/core.js uses TXT.<name>) */
 const TXT={
   weekCounts:'H',
@@ -3723,7 +4235,6 @@ const TARGET={Quads:[12,14],Hamstrings:[12,14],Glutes:[12,14],Calves:[9,9],Back:
 const LAYOUT_DEFAULT=['S','A','R','W','B','H','S'];
 const LAYOUTS={'2026-11-09':['S','B','R','W','A','H','S'],'2026-11-16':['S','B','R','W','A','H','S'],'2026-11-23':['S','B','R','W','A','H','S'],'2026-11-30':['S','B','R','W','A','H','S']};
 const UNSCHEDULED_FROM='2026-12-13';
-const RACE='2026-12-12';
 const layoutOf=d=>LAYOUTS[iso(wkStart(d))]||LAYOUT_DEFAULT;
 const PHASE={1:'Ease in',2:'Build',3:'Build',4:'Build',5:'Peak',6:'Taper starts',7:'Taper + race'};
 /* her cycle: she logs period dates in Progress → Cycle; averages and the next period come from them.
@@ -3808,13 +4319,6 @@ function planFor(d){
   return{key,type:'rest',title:'Rest day',checks:['Easy walk, 20–30 min','Stretch 10 min']};
 }
 
-function effPlan(d,L){L=L||logs;const k=iso(d),l=L[k],base=planFor(d);if(base.pre)return base;
-  if(l&&l.status==='moved')return{...base,type:'rest',optional:false,moved:true,title:'Moved: '+(l.movedTo?'to '+l.movedTo:'see coach'),checks:['Easy walk, 20–30 min','Mobility routine, 10 min']};
-  if(l&&l.key&&['done','partial','in_progress','recovery','skipped'].includes(l.status)&&l.key!==base.key)return planOfKey(l.key,d);
-  if(l&&l.hostKey&&['A','R','W','B','H'].includes(l.hostKey)&&!['done','partial','in_progress','recovery','skipped'].includes(l.status)&&l.hostKey!==base.key)return planOfKey(l.hostKey,d);
-  if(L===logs&&coach&&coach.date===k){if(coach.rest===true&&base.type!=='rest')return{...base,type:'rest',optional:false,title:coach.title||'Rest day',checks:['Easy walk, 20–30 min','Mobility routine, 10 min']};
-    if(coach.rest!==true&&coach.key&&coach.key!==base.key&&['A','R','W','B','H'].includes(coach.key))return planOfKey(coach.key,d)}
-  return base}
 
 /* state */
 let minds=[],db=null,sample=null,logs={},coach=null,PATCH=null,ACHV=null,report=null,reqs=[],tests=[],liftSel=null;
@@ -3843,11 +4347,6 @@ function pushNote(r){if(!r)return'';const d=iso(sel);let p=null;try{p=effPlan(se
   return''}
 const VTXT={go:'Train as planned.',trim:'One less set on each lift, no weight increases. Or tap Express for 25 minutes.',recover:'Mobility and a walk instead. Rest is training too.'};
 
-function history(name,before){
-  const k=slug(name),out=[];
-  Object.keys(logs).filter(x=>x<before).sort().reverse().forEach(x=>{const e=(logs[x].exercises||[]).find(e=>e.slug===k);if(e){const s=e.sets.filter(s=>s.t!=='W'&&s.t!=='D'&&s.done);if(s.length)out.push({date:x,sets:s})}});
-  return out;
-}
 function parseTime(raw){raw=String(raw).trim().replace(',','.');if(!raw)return NaN;const m=raw.match(/^(\d+)[:.](\d{1,2})$/);
   if(m){const sec=m[2].length===1?+m[2]*10:+m[2];return sec<60?(+m[1])*60+sec:NaN}const v=parseFloat(raw);if(!isFinite(v))return NaN;return v<30?Math.round(v*60):Math.round(v)}
 function suggest(name,sets,w,trim){
@@ -4001,7 +4500,7 @@ function renderTop0(){
   const sun=wkStart(sel),el=$('strip');el.innerHTML='';
   for(let i=0;i<7;i++){const d=addDays(sun,i),st=stateOf(d),b=document.createElement('button');
     b.className='day'+(iso(d)===iso(sel)?' sel':'');b.setAttribute('aria-label',DN[d.getDay()]+' '+short(d)+', '+st);
-    b.innerHTML='<span class="dn">'+DN[d.getDay()]+'</span><span class="dot num '+st+(iso(d)===iso(today)?' today':'')+'">'+(st==='done'?'✓':st==='skipped'||st==='missed'?'✕':st==='recovery'?'~':d.getDate())+'</span>';
+    b.innerHTML='<span class="dn">'+DN[d.getDay()]+'</span><span class="dot num '+st+(iso(d)===iso(today)?' today':'')+'">'+(st==='done'?'✓':st==='skipped'||st==='missed'?'✕':st==='recovery'?'<svg class="moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>':d.getDate())+'</span>';
     b.onclick=()=>iso(d)===iso(sel)?openCal():go(d);el.appendChild(b)}
 }
 
@@ -4048,9 +4547,12 @@ $('snap-ready').addEventListener('change',async e=>{const f=e.target.files&&e.ta
 
 /* session rendering */
 let FUN=null,FUNQ=null;
-function funPick(){const t=iso(today);if(FUN&&FUN.date===t&&FUN.quote&&FUN.quote.t)return{q:FUN.quote,z:FUN.zodiac&&FUN.zodiac.t&&FUN.zodiac.site?FUN.zodiac:null};
+/* 22 Nov: today's horoscope shows whenever fun/today is dated today (the 5:30 helper may write it before the coach adds a quote);
+   the quote comes from fun/today, else from her list by date. A card from another day is never shown. */
+function funPick(){const t=iso(today),F=FUN&&FUN.date===t?FUN:null,z=F&&F.zodiac&&F.zodiac.t&&F.zodiac.site?F.zodiac:null;
+  if(F&&F.quote&&F.quote.t)return{q:F.quote,z};
   const L=FUNQ&&Array.isArray(FUNQ.list)?FUNQ.list.filter(x=>x&&x.t):[];if(!L.length)return null;
-  const n=Math.floor(Date.UTC(today.getFullYear(),today.getMonth(),today.getDate())/864e5);return{q:L[n%L.length],z:null}}
+  const n=Math.floor(Date.UTC(today.getFullYear(),today.getMonth(),today.getDate())/864e5);return{q:L[n%L.length],z}}
 function renderFun(){const el=$('funToday');if(!el)return;let p=null;try{p=funPick()}catch(e){}
   const ok=p&&iso(sel)===iso(today)&&(mode==='preview'||mode==='summary')&&!(cur&&cur.status==='in_progress');if(!ok){el.hidden=true;return}
   const q=p.q,z=p.z,by=[q.who,q.film].filter(Boolean).map(esc).join(' · ');
@@ -4082,7 +4584,6 @@ function renderSession0(){try{renderFun()}catch(e){}try{renderPatch()}catch(e){}
   else if(cur.type==='lift')renderPreview(el);
   else if(cur.type==='cardio')renderCardio(el);
   else renderRest(el);
-  if(iso(sel)===iso(today)&&mode!=='live'&&mode!=='feedback'&&!(cur.type==='cardio'&&cur.status==='in_progress'))el.insertAdjacentHTML('beforeend',nightBtnHtml());
   if(iso(sel)===iso(today)&&mode!=='live'&&mode!=='feedback'){const ph=parkedHtml();if(ph)el.insertAdjacentHTML('afterbegin',ph)}
 }
 /* the 6:28am note is about the session the coach planned: hide it once today became something else (a Wrecked check-in,
@@ -4276,20 +4777,6 @@ $('session').addEventListener('change',e=>{const ki=e.target.closest('input[data
     persist();renderSession();return}
   const c=e.target.closest('input[data-chk]');if(c&&cur){cur.checked=cur.checked||{};cur.checked[c.dataset.chk]=c.checked;persist();if(mode!=='live'&&(cur.type==='rest'||cur.type==='cardio'))renderSession()}});
 
-function prCard(name,was,now){try{
-  const rm=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const o=$('prfx');if(o)o.remove();clearTimeout(window._prT);
-  const a=String(Math.round(was)),b=String(Math.round(now)),L=Math.max(a.length,b.length),A=a.padStart(L,' '),B=b.padStart(L,' ');
-  const DH=34,col=(f,t,i)=>{let h='';for(let k=0;k<=9;k++)h+='<div>'+k+'</div>';const fi=f===' '?0:+f;return'<div class="dg"><div data-to="'+t+'" data-i="'+i+'" style="transform:translateY(-'+fi*DH+'px)">'+h+'</div></div>'};
-  const w=document.createElement('div');w.id='prfx';w.className='prfx';w.setAttribute('role','status');w.setAttribute('aria-live','polite');
-  w.innerHTML='<div class="sh" aria-hidden="true"></div><span class="pk">PR</span>'+
-    '<div class="odo" aria-label="'+b+' kg">'+[...B].map((d,i)=>col(A[i],d,i)).join('')+'<small>kg</small></div>'+
-    '<div class="pt"><b>'+esc(name)+'</b><small>est. 1RM · +'+(Math.round(now)-Math.round(was)>=1?Math.round(now)-Math.round(was):Math.max(0.1,Math.round((now-was)*10)/10))+' kg</small></div>';
-  document.body.appendChild(w);fxTop(w,0.3);
-  const close=()=>{w.classList.remove('on');setTimeout(()=>w.remove(),350)};w.onclick=close;
-  requestAnimationFrame(()=>{w.classList.add('on');setTimeout(()=>w.querySelectorAll('.dg>div').forEach(c=>{const t=+c.dataset.to,l=L-1-(+c.dataset.i);if(l>0&&c.dataset.to===A[c.dataset.i])return;c.style.transform='translateY(-'+t*DH+'px)'}),rm?0:250)});
-  try{navigator.vibrate&&navigator.vibrate([60,40,60])}catch(_){}
-  window._prT=setTimeout(close,rm?2400:2800)}catch(e){toast('New PR · '+name+' · est. 1RM '+Math.round(now)+' kg')}}
 const ANIM={tick:null,tickT:0,date:null,xp0:null,lv0:null},RM=()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches}catch(e){return false}};
 const xpPct=g=>Math.max(3,Math.min(100,(g.xp-g.floor)/(g.next-g.floor)*100));
 window.addEventListener('resize',()=>navInd(true));
@@ -4300,26 +4787,6 @@ document.addEventListener('focusout',e=>{if(e.target.matches&&e.target.matches('
 /* plate burst: little bumper plates fly on a PR or a finished session */
 
 /* workout done: what the finale shows, worked out at the moment of saving */
-function winData(status,g0,g1){
-  const lift=cur.type==='lift',st=setsDone(),pr=cur.practice,stats=[],d=(cur.run&&cur.run.done)||{};
-  if(lift){if(cur.durationMin)stats.push([cur.durationMin,'min']);stats.push([st.vol,'kg moved']);stats.push([st.d+'/'+st.t,'sets'])}
-  else{if(d.mins)stats.push([+d.mins,'min']);if(d.km)stats.push([+d.km,'km']);if(d.hr)stats.push([+d.hr,'avg bpm'])}
-  const span=g1.next-g1.floor,p1=Math.max(3,Math.min(100,(g1.xp-g1.floor)/span*100)),p0=g1.lv>g0.lv?0:Math.max(0,Math.min(p1,(g0.xp-g1.floor)/span*100));
-  const ex=cur.express||/Express$/.test(cur.title||''),iv=!lift&&cur.run&&cur.run.iv?+cur.run.iv:0;
-  const scene=lift?(cur.key==='A'?'bar':cur.key==='B'?'kb':'db'):(()=>{const m=cmode(cur,parse(cur.date));if(m==='bike')return'bike';if(m!=='run')return'park';return cur.key==='L'?'long':iv?'track':'park'})();
-  const title=pr&&lift?'Practice done':lift?'Workout done':cur.key==='L'?'Long run done':iv?'Intervals done':cur.key==='T'?'Bonus run done':'Cardio done';
-  const tag=pr?(lift?'Tuesday is the real one':'Practice · nothing saved'):ex?'Express · streak safe':status==='partial'?'Every set counts':g1.streak>1?'Streak '+g1.streak:'';
-  /* milestones: moments that only happen once get the gold version */
-  let mile='';
-  if(!pr){const dd=parse(cur.date),w=weekOf(dd);
-    if(g0.workouts===0&&g1.workouts>=1)mile='First session of the plan';
-    if(cur.key==='L'&&+d.mins>=60&&!Object.keys(logs).some(k=>k!==cur.date&&logs[k].key==='L'&&logs[k].status==='done'&&+(((logs[k].run||{}).done||{}).mins)>=60))mile='First 60-minute long run';
-    if(w>=1&&w%4===0){let last=true;for(let i=mdow(dd)+1;i<7;i++){const p=effPlan(addDays(dd,i-mdow(dd)));if(p.type!=='rest'&&!p.optional){last=false;break}}
-      if(last)mile='Block '+(w/4)+' complete · review lands Sunday'}}
-  return{kind:lift?'lift':'run',scene,title,tag,mile,kicker:(cur.title||'').replace(/ · Express$/,''),stats,prs:(cur.prs||[]).slice(0,3),plates:status==='partial'||ex?2:3,
-    rounds:iv,mins:+d.mins||(cur.run&&cur.run.mins)||0,km:+d.km||0,
-    xp:pr?0:Math.max(0,g1.xp-g0.xp),lv:g1.lv,lvTitle:g1.title,levelUp:!pr&&g1.lv>g0.lv,p0,p1,streak:g1.streak,practice:!!pr,
-    plate:g1.lv>=7?'r':g1.lv>=5?'b':g1.lv>=3?'y':'g',ghost:pr?null:ghostOf(logs[cur.date]),story:'',reward:!pr&&g1.lv>g0.lv?rewardFor(g1.lv):'',lvFrom:g0.lv}}
 
 /* hero headline: size to the longest word so it never spills out of the card */
 /* workout done. Lifting: Lower A loads a barbell in a squat rack, Upper clinks two dumbbells, Lower B drops two kettlebells.
@@ -4348,7 +4815,7 @@ function win(o){try{
     (o.ghost?ghostHtml(o.ghost,true):'')+
     (o.levelUp?'<div class="wlvup" data-plate="'+o.plate+'"><div class="lvl num" data-plate="'+o.plate+'">'+o.lv+'</div><div class="wlvt"><span>Level up</span><b>Level '+o.lv+' · '+esc(o.lvTitle)+'</b>'+((o.plate!==(o.lvFrom>=7?'r':o.lvFrom>=5?'b':o.lvFrom>=3?'y':'g'))?'<small>'+({g:'Green 10 kg',y:'Yellow 15 kg',b:'Blue 20 kg',r:'Red 25 kg'}[o.plate])+' plate unlocked</small>':'')+(o.reward?'<em>Your reward: '+esc(o.reward)+'. Go claim it.</em>':'')+'</div></div>':'')+
     (o.story?'<p class="wstory"><span>PULSE</span>'+esc(o.story)+'</p>':'')+
-    (o.practice?'<button class="wbtn" id="winok">Got it</button>':'<button class="wbtn" id="wincool">Start Cool-down</button><button class="wbtn wl" id="winok">Later</button>')+(showXp?'<p class="wnote">Saved</p>':'');
+    (o.practice?'<button class="wbtn" id="winok">Got it</button>':'<button class="wbtn" id="wincool">Start cool-down</button><button class="wbtn wl" id="winok">Do it later</button>')+(showXp?'<p class="wnote">Saved</p>':'');
   document.body.appendChild(w);
   const c=w.querySelector('canvas'),x=c.getContext('2d'),dpr=Math.min(2,window.devicePixelRatio||1);let W=0,H=0;
   const size=()=>{W=c.width=innerWidth*dpr;H=c.height=innerHeight*dpr};size();addEventListener('resize',size);
@@ -4356,7 +4823,7 @@ function win(o){try{
   let onClose=null;
   function close(){if(closed)return;closed=true;if(onClose)try{onClose()}catch(e){}tm.forEach(clearTimeout);cancelAnimationFrame(raf);removeEventListener('resize',size);document.removeEventListener('keydown',kd);w.classList.remove('on');setTimeout(()=>w.remove(),rm?50:700);setTimeout(animAfterWin,rm?0:320)}
   const kd=e=>{if(e.key==='Escape')close()};document.addEventListener('keydown',kd);
-  $('winok').onclick=close;const wcl=$('wincool');if(wcl)wcl.onclick=()=>{close();setTimeout(()=>{const m=document.querySelector('.mob');if(m)m.scrollIntoView({behavior:'smooth',block:'start'})},500)};w.addEventListener('click',e=>{if(!closed&&e.target===w&&(performance.now()-t0)/1000>tT+0.8)close()});
+  $('winok').onclick=close;const wcl=$('wincool');if(wcl)wcl.onclick=()=>{close();setTimeout(()=>openNight('cool'),350)};w.addEventListener('click',e=>{if(!closed&&e.target===w&&(performance.now()-t0)/1000>tT+0.8)close()});
   const t0=performance.now();requestAnimationFrame(()=>w.classList.add('on'));
   try{$('winok').focus({preventScroll:true})}catch(e){}
   at(15+tT,close);
@@ -4411,10 +4878,6 @@ const ADDON=[['McGill curl-up','3 × 6, hold each 8 s','One knee bent, hands und
 /* his numbers for the timed and loaded items (his ask, 21 Oct): one best set each, saved as log.addonLog {index: {kg, s, r}}.
    Boxes start blank (his rule): last time's numbers show beside them, never inside */
 const ADF={kg:'kg',s:'secs',r:'reps'},ADU={kg:' kg',s:' s',r:' reps'};
-function adlHtml(i,spec){const v=((cur.addonLog||{})[i])||{},L=addonLast(i),fm=o=>spec.filter(f=>o[f]!=null).map(f=>o[f]+ADU[f]).join(' · ');
-  return'<div class="adl">'+spec.map(f=>'<label><input class="adin num" type="text" inputmode="decimal" autocomplete="off" data-adl="'+i+'" data-f="'+f+'" value="'+(v[f]!=null?esc(v[f]):'')+'" aria-label="'+esc(ADDON[i][0])+' '+ADF[f]+'"><span>'+ADF[f]+'</span></label>').join('')+'<small>'+(L&&fm(L)?'Last time: '+esc(fm(L)):'Your best set')+'</small></div>'}
-function addonHtml(){if(!cur||cur.key!=='C'||cur.express)return'';const c=cur.checked||{},n=ADDON.filter((_,i)=>c['addon-'+i]).length;
-  return'<section class="card wu" id="addoncard"><div class="head"><h2>After the cardio · core + grip · 15 min</h2><span class="badge '+(n>=ADDON.length?'done':'open')+'" id="addonbadge">'+n+'/'+ADDON.length+'</span></div><p class="msg" style="margin:0">Moved here from the lifting days so those finish by 8:00. Key in your best set for the timed and grip work so your coach can track it.</p>'+ADDON.map((x,i)=>tickRow(x,'addon-'+i,'data-chk',c['addon-'+i])+(x[3]?adlHtml(i,x[3]):'')).join('')+'</section>'}
 $('session').addEventListener('input',e=>{const c=e.target.closest('input[data-adl]');if(!c||!cur)return;const i=c.dataset.adl,f=c.dataset.f,raw=String(c.value).replace(',','.').trim(),v=parseFloat(raw);
   cur.addonLog=cur.addonLog||{};const o=cur.addonLog[i]=cur.addonLog[i]||{};if(raw===''||!isFinite(v)||v<0)delete o[f];else o[f]=f==='kg'?r1(v):Math.round(v);
   if(!Object.keys(o).length)delete cur.addonLog[i];persist()});
@@ -4474,78 +4937,31 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-hang]');if
 /* keep the screen on during a workout (27 Oct): the Screen Wake Lock where the app allows it, otherwise a tiny silent looping video
    (the trick phones respect). Only while a workout is live; released as soon as it isn't, or when the app goes to the background. */
 const WAKE={lock:null,vid:null,told:false};
-function wakeOff(){try{if(WAKE.lock){WAKE.lock.release();WAKE.lock=null}}catch(e){}try{if(WAKE.vid&&!WAKE.vid.paused)WAKE.vid.pause()}catch(e){}}
 document.addEventListener('click',()=>setTimeout(wakeCheck,60),true);
 document.addEventListener('visibilitychange',wakeCheck);
 setInterval(wakeCheck,3000);
 /* shrink a big title until its longest word fits (fonts differ by phone) */
-function fitHt(){document.querySelectorAll('.ht').forEach(el=>{if(!el.children.length&&/ · /.test(el.textContent))el.textContent=el.textContent.replace(/ · /g,'\u00a0· ');el.style.fontSize='';let fs=parseFloat(getComputedStyle(el).fontSize)||40,n=0;{const cap=el.textContent.length>14?46:/\s/.test(el.textContent.trim())?60:80;if(fs>cap){fs=cap;el.style.fontSize=fs+'px'}}while(el.scrollWidth>el.clientWidth+1&&fs>20&&n<30){fs-=2;n++;el.style.fontSize=fs+'px'}})}
 let fitQ=0;new MutationObserver(()=>{if(fitQ)return;fitQ=requestAnimationFrame(()=>{fitQ=0;fitHt()})}).observe(document.body,{childList:true,subtree:true});
 addEventListener('resize',fitHt);try{document.fonts&&document.fonts.ready.then(fitHt)}catch(e){}
 /* rest timer */
-function startRest(sec,label){rest={on:true,end:Date.now()+sec*1000,total:sec,label:'Rest · next: '+label};$('restbar').hidden=false;$('rlabel').textContent=rest.label;loop()}
-function stopRest(){rest.on=false;$('restbar').hidden=true;$('restbar').classList.remove('end')}
-$('rminus').onclick=()=>{rest.end-=15000;rest.total=Math.max(15,rest.total-15)};$('rplus').onclick=()=>{rest.end+=15000;rest.total+=15};$('rskip').onclick=stopRest;
+try{new ResizeObserver(rbH).observe($('restbar'))}catch(_){}
+/* bring a running rest timer back after a reload (it used to vanish) */
+setTimeout(()=>{try{const r=JSON.parse(localStorage.getItem('restT')||'null');if(r&&r.on&&r.end>Date.now()&&r.date===iso(today)){rest=r;$('restbar').hidden=false;rbLabel(r.label);loop()}else localStorage.removeItem('restT')}catch(_){}},1500);
+$('rminus').onclick=()=>{rest.end-=15000;rest.total=Math.max(15,rest.total-15);restSave()};$('rplus').onclick=()=>{rest.end+=15000;rest.total+=15;restSave()};$('rskip').onclick=stopRest;
 
 /* feedback + finish */
-function renderFeedback(){
-  const el=$('session'),ms=[...new Set(cur.exercises.flatMap(e=>(X[e.name]||{m:[]}).m))].filter(m=>!['Grip','Core','Shins'].includes(m));
-  cur.feedback=cur.feedback||{pump:{},sore:{}};cur.feel=cur.feel||{};const st=setsDone();
-  let h='<section class="card"><h3>How did it go?</h3><p class="msg">'+st.d+' of '+st.t+' sets'+(st.vol>0?' · '+st.vol.toLocaleString()+' kg':'')+'. Two quick taps per muscle help your coach set next week\'s volume.</p>';
-  ms.forEach(m=>{h+='<div class="q"><span><b style="color:var(--fg)">'+m+'</b> · pump today</span><div class="chips">'+[['low','Low','w'],['good','Good','g'],['great','Great','g']].map(([v,t,c])=>'<button class="chip '+c+'" data-fb="pump" data-m="'+m+'" data-v="'+v+'" aria-pressed="'+(cur.feedback.pump[m]===v)+'">'+t+'</button>').join('')+'</div>'+
-    '<span>Sore from last time going in?</span><div class="chips">'+[['none','Not at all','g'],['healed','Healed just in time','g'],['still','Still sore','r']].map(([v,t,c])=>'<button class="chip '+c+'" data-fb="sore" data-m="'+m+'" data-v="'+v+'" aria-pressed="'+(cur.feedback.sore[m]===v)+'">'+t+'</button>').join('')+'</div></div>'});
-  /* Aches block (lower back, knees, R shoulder) removed 10 Nov: it was Kishen's, copied over. She uses the note box or Tell your coach. */
-  h+='<input id="fnote" placeholder="Any aches or anything else? (tap the mic)" value="'+esc(cur.note||'')+'"><button class="primary" id="saveW">Save workout</button><button class="ghost" id="backW">Back to workout</button><p class="msg" id="smsg" role="status"></p></section>';
-  el.innerHTML=h;
-  el.querySelector('.card').addEventListener('click',e=>{const b=e.target.closest('button[data-fb]');if(!b)return;const f=b.dataset.fb,m=b.dataset.m,v=b.dataset.v;
-    const o=f==='feel'?cur.feel:cur.feedback[f];o[m]=o[m]===v?undefined:v;
-    b.parentElement.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(o[m]===x.dataset.v)))});
-  $('saveW').onclick=()=>{cur.note=$('fnote').value.trim();const s=setsDone();finishSave(s.d>=s.t?'done':'partial')};
-  $('backW').onclick=()=>{mode='live';renderSession()};
-}
 /* compound (multi-joint, or a loaded carry or hinge) vs isolation (one joint, core and grip holds): a small tag next to the name */
 const COMPOUND=new Set(['Wall drive','Cable ski pull','Goblet walking lunge','DB thruster','Wall ball','Romanian deadlift','Sled rope row','Sled block','Half-kneeling cable row','Hack squat','Leg press','Bulgarian split squat','Weighted pull-up','Incline DB press','Chest-supported row','Dips to parallel','Pull-up','Seated DB shoulder press','Landmine press','Hip thrust','Cable pull-through','KB deadlift from block','DB walking lunge','45° back extension',"Farmer's carry",'Suitcase carry','Smith machine squat','Goblet squat','Horizontal leg press','Smith split squat','DB reverse lunge','Heel-elevated goblet squat','Bench press','DB bench press','Smith hip thrust','Weighted glute bridge','DB Romanian deadlift','Lat pulldown','Neutral-grip pulldown','Incline machine press','Incline Smith press','Machine chest press','Seated cable row','One-arm DB row','Close-grip push-up','Machine shoulder press','Overhead press','Barbell row','Romanian deadlift','Push-up','Chin-up']);
-function kindTag(n){if((X[n]||{}).kind==='cardio')return'';return isComp(n)?'<span class="kt c" title="Compound: several joints work together">COMP</span>':'<span class="kt i" title="Isolation: one joint, one main muscle">ISO</span>'}
 /* his own supersets, today only: e.ss = partner's name on both, partner sits straight after A1 */
 let ssOpen=-1,ssQ='',ssPend=null;
 function cgMembers(ei){const e=cur.exercises[ei];if(!e||!e.cg)return[];return cur.exercises.map((o,i)=>o.cg===e.cg?i:-1).filter(i=>i>=0)}
 function cgL(ei){const m=cgMembers(ei);return m.length>1?'<span class="ssl">'+(m.indexOf(ei)+1)+'</span>':''}
 /* superset hand-off: glide the page to the partner's next set, slide its card in, and flag where you're going */
-function goToSet(ei){const ex=cur&&cur.exercises[ei];if(!ex)return;const si=ex.sets.findIndex(z=>z.t!=='W'&&!z.done);if(si<0)return;
-  const b=document.querySelector('#session button[data-a="ok"][data-e="'+ei+'"][data-s="'+si+'"]'),row=b&&b.closest('.sr'),card=row&&row.closest('.exc');if(!row)return;
-  const rm=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches);
-  const r=row.getBoundingClientRect(),y0=window.scrollY,y1=Math.max(0,y0+r.top+r.height/2-window.innerHeight*0.42),down=y1>=y0;
-  const old=$('ssgo');if(old)old.remove();
-  const tag=document.createElement('div');tag.id='ssgo';tag.className='ssgo'+(down?'':' up')+($('prfx')?' low':'');tag.setAttribute('aria-hidden','true');
-  tag.innerHTML='<span class="ar">'+(down?'↓':'↑')+'</span><span><small>'+(ex.cg?'Next up':'Superset · next')+'</small><b>'+esc(ex.name)+' · set '+(ex.sets.slice(0,si+1).filter(z=>z.t==='N').length||1)+'</b></span>';
-  document.body.appendChild(tag);requestAnimationFrame(()=>tag.classList.add('on'));setTimeout(()=>{tag.classList.remove('on');setTimeout(()=>tag.remove(),300)},1500);
-  const land=()=>{if(card){card.classList.remove('ssin');void card.offsetWidth;card.classList.add('ssin')}row.classList.remove('nextup');void row.offsetWidth;row.classList.add('nextup')};
-  if(rm||Math.abs(y1-y0)<4){window.scrollTo(0,y1);land();return}
-  const T=Math.min(700,Math.max(380,Math.abs(y1-y0)*0.9)),t0=performance.now(),ez=k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
-  (function step(now){const k=Math.min(1,(now-t0)/T);window.scrollTo(0,y0+(y1-y0)*ez(k));if(k<1)requestAnimationFrame(step);else land()})(t0)}
-function swapPanel(e,ei,anyDone){const cp=coachPick(e.swappedFrom||e.name,cur.date);let opts=(SWAPS[e.name]||[]).filter(n=>X[n]&&!cur.exercises.some(o=>o.name===n));
-  if(cp&&!cur.exercises.some(o=>o.name===cp.n))opts=[cp.n].concat(opts.filter(n=>n!==cp.n));
-  return '<div class="swpanel"><b>'+esc(e.name)+' taken?</b><small>Same muscles, closest match first'+(anyDone?'. Your finished sets stay; the rest move to the swap':'')+'.</small>'+
-        opts.map((n,i)=>'<button class="swopt" data-a="swapto" data-e="'+ei+'" data-n="'+esc(n)+'"><span><b>'+esc(n)+kindTag(n)+'</b><small>'+esc((X[n].m||[]).join(', '))+(history(n,cur.date).length?' · you\'ve done this before':' · first time: start light')+'</small></span>'+(cp&&n===cp.n?'<em>Coach\'s pick</em>':i===0?'<em>Best match</em>':'')+'</button>'+(cp&&n===cp.n&&cp.why?'<small style="margin:-2px 0 6px">'+esc(cp.why)+'</small>':'')).join('')+
-        (ei<cur.exercises.length-1?(ei<cur.exercises.length-2&&!e.cg?'<button class="swopt" data-a="later1" data-e="'+ei+'"><span><b>Do the next one first</b><small>Swap places with '+esc(cur.exercises[ei+1].name)+', then come back</small></span></button>':'')+'<button class="swopt" data-a="later" data-e="'+ei+'"><span><b>Do it at the end</b><small>'+(COMPOUND.has(e.name)&&!e.cg?'You\'ll be more tired by then, so on strength days a free swap above is usually better':'Move it to the end and come back when it\'s free')+'</small></span></button>':'')+
-        '<button class="ghost" data-a="swapx" data-e="'+ei+'">Cancel</button></div>'}
 const ADDMUS=['Quads','Hamstrings','Glutes','Calves','Back','Chest','Shoulders','Biceps','Triceps','Core','Grip'];
 $('session').addEventListener('toggle',e=>{const d=e.target;if(d&&d.matches&&d.matches('details[data-adddet]'))addDet=d.open},true);
 $('session').addEventListener('input',e=>{const q=e.target.closest('input[data-addq]');if(q){addQ=q.value;renderAddList();return}
   const sq=e.target.closest('input[data-ssq]');if(sq){ssQ=sq.value;const l=$('sslist');if(l)l.innerHTML=ssListInner(+sq.dataset.e);return}
   const nmI=e.target.closest('input[data-addname]');if(nmI){addC.name=nmI.value}});
-function doSwap(ei,to){const ex=cur.exercises[ei];if(!X[to])return;ssUnlink(ex);const work=ex.sets.filter(z=>z.t!=='W'),done=work.filter(z=>z.done).length,left=Math.max(1,work.length-done);
-  const ne=mkEx(to,left),from=ex.swappedFrom||ex.name,xf=X[from]||{m:[]},xt=X[to];ne.swappedFrom=from;if(ex.cg)ne.cg=ex.cg;if(ex.tg||ex.tg0)ne.tg0=ex.tg||ex.tg0;
-  const shared=(xt.m||[]).filter(m=>(xf.m||[]).includes(m)),rr=xt.lo+(xt.hi!==xt.lo?'–'+xt.hi:'');
-  ne.why='Instead of '+from+': works '+(shared.length?shared:xt.m).join(' and ').toLowerCase()+'. '+((xt.unit!=='t'&&(xt.lo!==xf.lo||xt.hi!==xf.hi))?'Reps change to '+rr+'. ':'')+(xt.rest!==xf.rest?'Rest '+fmtT(xt.rest)+'. ':'')+ne.why;
-  if(done){ex.sets=ex.sets.filter(z=>z.done);ex.cutForSwap=true;cur.exercises.splice(ei+1,0,ne)}else cur.exercises[ei]=ne;
-  swapOpen=-1;picker=null;persist();renderSession();toast('Swapped to '+to)}
-async function persist(now){
-  if(!cur||cur.practice)return;try{localStorage.setItem('draft-'+cur.date,JSON.stringify(bodyOf(cur)))}catch(e){}
-  const sv=t=>{saveState=t;const el=$('svst');if(el){el.textContent=t;el.classList.toggle('kunsaved',/^Not saved/.test(t))}};sv('Saving…');
-  clearTimeout(saveT);const run=async()=>{if(!db){sv('Kept on this phone');return}try{const b=bodyOf(cur);await db.doc('log/'+cur.date).set(b);logs[cur.date]=b;sv('Saved ✓')}catch(e){sv('Not saved yet · kept on phone');const m=$('smsg');if(m){m.className='msg err';m.textContent='Couldn\'t save to the cloud yet. Your sets are kept on this phone; it tries again by itself when the signal is back.'}}};
-  if(now)return run();saveT=setTimeout(run,1500);
-}
 
 /* a class or session logged from outside the plan (30 Oct): what was on the board and her share of it */
 function classHtml(l){const c=l.class,her=(c.her&&Array.isArray(c.her.blocks))?c.her.blocks:[],hb=b=>her.find(x=>x.block===b.block)||null,s=streaks();
@@ -4554,32 +4970,6 @@ function classHtml(l){const c=l.class,her=(c.her&&Array.isArray(c.her.blocks))?c
   h+='<div class="plist">'+c.blocks.map(b=>{const m=hb(b);return'<div class="pl"><div class="l"><b>'+esc(b.block)+' · '+esc(b.total)+'</b><small>'+(m?'You: '+esc(m.work)+' + '+esc(m.buyin):'Buy-in: '+esc(b.p1)+' · work: '+esc(b.p2))+'</small></div></div>'}).join('')+'</div>';
   if(c.her&&c.her.basis)h+='<p class="msg" style="margin:0">Your share is an estimate: '+esc(c.her.basis.replace(/\s*\(Kishen[^)]*\)/,''))+'.</p>';
   return h}
-function renderSummary(el){
-  const st=setsDone(),hist=Object.keys(logs).filter(x=>x<cur.date&&logs[x].key===cur.key&&logs[x].volume).sort().reverse()[0];
-  const prev=hist?logs[hist]:null,s=streaks();
-  const label={done:'Done',partial:'Partly done',skipped:'Skipped',recovery:'Recovered'}[cur.status]||'Saved';
-  let h='<section class="card"><div class="head"><h3>'+esc(cur.title)+'</h3><span class="badge '+cur.status+'">'+label+'</span></div>';
-  if(cur.fromReply)h+='<p class="msg">Logged from your reply to the coach'+(cur.note?': '+esc(cur.note):'')+'.</p>';
-  if(cur.status==='skipped')h+='<p class="msg">Skipped. Tomorrow\'s plan makes room for it so your must-dos still happen.</p>';
-  else if(cur.class&&Array.isArray(cur.class.blocks)){h+=classHtml(cur)}
-  else if(cur.type==='lift'){
-    h+='<div class="sum num"><div><b>'+(cur.durationMin!=null?cur.durationMin+' min':'–')+'</b><span>duration</span></div><div><b>'+st.vol.toLocaleString()+'</b><span>kg volume'+volCmp(cur,prev)+'</span></div><div><b>'+st.d+'/'+st.t+'</b><span>sets</span></div></div>';   /* 19 Nov: the streak is already at the top of the page */
-    if((cur.skippedEx&&cur.skippedEx.length)||(cur.cutEx&&cur.cutEx.length))h+='<div class="note trim">'+(cur.skippedEx.length?'Not done today: <b>'+cur.skippedEx.map(esc).join(', ')+'</b>. ':'')+(cur.cutEx.length?'Cut short: '+cur.cutEx.map(esc).join(', ')+'. ':'')+'Pick it up later in the week if you can.</div>';
-    (cur.prs||[]).forEach(p=>{h+='<div class="pr"><b>PR</b>'+esc(p.name)+' · est. 1RM '+p.e1+' kg</div>'});
-    {const setsOf=e=>{const w=e.sets.filter(x=>x.t!=='W'&&x.done),x=X[e.name]||{};return (w.length?w.map(x2=>(x2.t==='D'?'drop ':'')+(x.unit==='t'?(x.bw?'':r1(x2.kg)+' kg · ')+fmtT(x2.reps):x.bw||!+x2.kg?(x.add&&!x.bw?'BW×':'')+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''):r1(x2.kg)+'×'+x2.reps+(x.unit==='s'?' s':x.unit==='m'?' m':''))).join(', '):'not done')+(e.ss?' · superset with '+esc(e.ss):'')};
-     const gh=cur.practice?null:ghostOf(logs[cur.date]||cur),inG=new Set(gh?gh.rows.map(r=>r.name):[]);let gx=gh?ghostHtml(gh,false):'';
-     /* 19 Nov: a lift in the ghost race shows its sets under its name there, so it isn't listed twice */
-     (cur.exercises||[]).forEach(e=>{if(!inG.has(e.name))return;const a='<div class="gr"><span>'+esc(e.name)+'</span>';gx=gx.replace(a,'<div class="gr"><span>'+esc(e.name)+'<small class="gsets num">'+setsOf(e)+'</small></span>')});
-     h+=gx;const rest=(cur.exercises||[]).filter(e=>!inG.has(e.name));
-     if(rest.length)h+='<div class="plist">'+rest.map(e=>'<div class="pl"><div class="l"><b>'+esc(e.name)+'</b><small class="num">'+setsOf(e)+'</small></div></div>').join('')+'</div>'}
-  }else if(cur.type==='cardio'&&cur.run){const d=cur.run.done||{};h+='<div class="sum num"><div><b>'+(d.mins||'–')+' min</b><span>time</span></div><div><b>'+(d.hr||'–')+'</b><span>avg bpm</span></div><div><b>'+(d.km||'–')+'</b><span>km</span></div></div>'}
-  else h+='<p class="msg">Logged.</p>';
-  if(!cur.practice)h+='<p class="msg" style="color:var(--done)">'+(db?'Saved to your log ✓':'Kept on this phone. Open the tracker in the Claude app to sync.')+'</p>';
-  h+=(cur.class?'':'<button id="editW">Edit this log</button>')+'</section>';
-  if(cur.status!=='skipped'&&cur.type==='cardio')h+=addonHtml();
-  if(cur.status!=='skipped'&&cur.type!=='rest')h+=mobHtml();
-  el.innerHTML=h;if($('editW'))$('editW').onclick=()=>{mode=cur.type==='lift'&&cur.status!=='skipped'?'live':'preview';if(cur.status==='skipped'){cur=buildSession(sel)}else if(cur.type!=='lift'){cur.status='in_progress';cur.logOpen=true}renderSession()};
-}
 
 /* cardio */
 const CMODES=[['run','Run'],['bike','Bike'],['walk','Incline walk'],['row','Rower'],['stairs','Stair master']];
@@ -4588,18 +4978,6 @@ const CMODE_A={run:'Easy-run',bike:'Easy bike',walk:'Incline walk',row:'Easy row
 /* what kind of cardio a log or session was: logged choice first, then the title, then the plan's default */
 let hrMode=null;
 /* read-only look ahead at a future cardio day: same shape as the lifting preview */
-function cardioPreviewHtml(r){const row=(a,b,c,d)=>'<div class="pl"><div class="l"><b>'+esc(a)+'</b>'+(b?'<small>'+esc(b)+'</small>':'')+'</div>'+(d?'<span class="num" style="white-space:nowrap;font-weight:600">'+esc(d)+'</span>':'')+'</div>';
-  const wl=warmList(),ml=mobList(cur.key),add=cur.key==='C'&&!cur.express;let h='<section class="card"><div class="head"><h2>The session</h2>'+evb(r.iv?'int4x4':cur.key==='L'?'longrun':'polar')+'</div><div class="plist">';
-  if(r.iv){h+=row('Easy warm-up','Z1–Z2, the interval timer counts it','','10 min');
-    h+=row(r.iv+' × 4 min hard','Z5 · 165–174 bpm. Can\'t talk','',r.iv+' × 4 min');
-    h+=row('3 min easy between each','Z2 · about 128 bpm','',(r.iv-1)+' × 3 min');
-    h+=row('Cool-down','Z1, easy spin or walk','','5 min');
-    h+='</div><p class="msg" style="margin:0">'+esc(r.info.split('.')[0])+'.</p><div class="plist">'}
-  else h+=row(r.name,r.info,'',r.mins+' min');
-  if(add)h+='</div><h3 class="sub">After the cardio · core + grip · 15 min</h3><div class="plist">'+ADDON.map(x=>row(x[0],x[2],'',x[1])).join('');
-  h+='</div><h3 class="sub">Warm-up first · 3 min</h3><p class="msg" style="margin:0">'+wl.map(x=>esc(x[0])).join(' · ')+'</p>';
-  h+='<h3 class="sub">Cool-down after · 6 min</h3><p class="msg" style="margin:0">'+ml.map(x=>esc(x[0])).join(' · ')+'</p>';
-  return h+'</section>'}
 function renderCardio(el){try{renderFun();const _v=$('view-today');if(_v&&cur&&cur.status==='in_progress')_v.classList.remove('pk-prev')}catch(e){}
   const r=cur.run,d=r.done,future=sel>today;
   const isToday=dayDiff(sel,today)===0;
@@ -4652,12 +5030,6 @@ function renderCardio(el){try{renderFun();const _v=$('view-today');if(_v&&cur&&c
     catch(err){m.className='msg err';m.textContent='Couldn\'t read that one. Use + and − instead.'}};
   if($('ivgo'))$('ivgo').onclick=()=>{startIntervals(r.iv)};
 }
-function startIntervals(n){ensureAudio();const ph=[['Warm-up, easy · Z1–Z2',600]];for(let i=1;i<=n;i++){ph.push(['Hard '+i+' of '+n+' · Z5 · 165–174 bpm',240]);if(i<n)ph.push(['Easy · Z2 · ~128 bpm',180])}ph.push(['Cool-down · Z1',300]);
-  let i=0,end=Date.now()+ph[0][1]*1000;clearInterval(iv);if(!cur.startedAt)cur.startedAt=new Date().toISOString();
-  const up=()=>{const left=(end-Date.now())/1000;if(!$('ivtime')){clearInterval(iv);return}$('ivtime').textContent=fmtT(left);$('ivph').textContent=ph[i][0];
-    if(left<=0){i++;beep();if(i>=ph.length){clearInterval(iv);$('ivph').textContent='Done. Log it below';return}end=Date.now()+ph[i][1]*1000}};
-  up();iv=setInterval(up,250);$('ivgo').textContent='Restart';
-}
 
 /* heart-rate zones: % of max heart rate. Max is estimated from age 36 with the Tanaka formula (208 − 0.7 × age ≈ 183).
    Easy and long runs live in Z2 (the plan's 120–137 bpm); 4×4 hard efforts aim for 90–95% of max (165–174 bpm). */
@@ -4669,19 +5041,6 @@ const ZN=[[1,'Recovery',.50,.65,'var(--zz1)','Warm-ups, cool-downs and walk brea
   [5,'Max effort',.90,1,'var(--zz5)','The 4×4 hard minutes. This is what raises VO2 max. Can\'t talk.']];
 const zbpm=z=>[Math.round(z[2]*HRMAX),z[0]===5?HRMAX:Math.round(z[3]*HRMAX)];
 /* rest day */
-function renderRest(el){
-  const p=cur.plan||planFor(sel),future=sel>today;cur.checked=cur.checked||{};
-  let h='<section class="card"><div class="head"><h3>'+esc(cur.title)+'</h3><span class="badge rest">'+(cur.recoverOf?'Recover':p.pre?'Soon':'Rest')+'</span></div>'+noteHtml();
-  if(p.pre){const sun=buildSession(addDays(START,1));h+='<p class="msg">Week 1 starts Tuesday 27 Oct with Strength A. Try the workout screen now with a practice run. Nothing is saved.</p><div class="plist">'+sun.exercises.map(e=>{const w=e.sets.filter(s=>s.t!=='W'),x=X[e.name];return'<div class="pl"><div class="l"><b>'+esc(e.name)+'</b><small>'+w.length+' × '+(x.unit==='t'?(x.lbl||''):x.lo+(x.hi!==x.lo?'–'+x.hi:'')+(x.unit==='s'?' s':x.unit==='m'?' m':''))+' · rest '+fmtT(x.rest)+'</small></div></div>'}).join('')+'</div><h3 class="sub">Warm-up first · 8 min</h3><p class="msg" style="margin:0">'+WU.A.map(x=>esc(x[0])).join(' · ')+
-    '<h3 class="sub">Or practise another day</h3><div class="pcard"><button data-prc="4"><b>Strength B</b><small>Fridays</small></button><button data-prc="3"><b>Engine</b><small>Thursdays</small></button></div>'+
-    '<div class="pcard"><button data-prc="9"><b>Run repeats</b><small>Wednesdays</small></button><button data-prc="12"><b>Hyrox sim</b><small>Saturdays</small></button></div>'}
-  h+=(cur.checks||[]).map(c=>'<label class="tick"><span>'+esc(c)+'</span><input type="checkbox" data-chk="'+slug(c)+'" '+(cur.checked[slug(c)]?'checked':'')+'></label>').join('');
-  if(!future&&!p.pre)h+='<button class="primary" id="saveRest">'+(cur.recoverOf?'Done: recovery':'Done')+'</button>';
-  el.innerHTML=h+'<p class="msg" id="smsg"></p></section>';
-  if($('saveRest'))$('saveRest').onclick=()=>finishSave(cur.recoverOf?'recovery':'done');
-  el.querySelectorAll('button[data-prc]').forEach(b=>b.onclick=()=>{cur=buildSession(addDays(START,+b.dataset.prc));cur.practice=true;mode='preview';renderSession();window.scrollTo({top:0,behavior:'smooth'});toast('Practice mode · nothing is saved')});
-  if($('practice'))$('practice').onclick=()=>{cur=buildSession(addDays(START,1));cur.practice=true;cur.status='in_progress';cur.startedAt=new Date().toISOString();cur.phase='warmup';mode='live';ensureAudio();renderSession();window.scrollTo({top:Math.max(0,$('session').offsetTop-8),behavior:'smooth'});toast('Practice mode · nothing is saved')};
-}
 
 /* coach messages */
 $('reqform').addEventListener('submit',async e=>{e.preventDefault();const t=$('reqtext'),m=$('reqmsg');m.className='msg';
@@ -4700,10 +5059,6 @@ document.addEventListener('keydown',e=>{const svg=e.target.closest&&e.target.clo
   if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();const k=svg._k==null?(e.key==='ArrowRight'?0:T.length-1):Math.max(0,Math.min(T.length-1,svg._k+(e.key==='ArrowRight'?1:-1)));chartTip(svg,k)}else if(e.key==='Escape')chartTip(svg,null)});
 document.addEventListener('focusout',e=>{const svg=e.target.closest&&e.target.closest('svg.chart[data-tips]');if(svg)chartTip(svg,null)});
 /* ---------- Ghost race: each lift against the last session of the same workout ---------- */
-function exScore(e){const x=X[e.name]||{},w=(e.sets||[]).filter(s=>s.t!=='W'&&s.t!=='D'&&s.done);if(!w.length)return null;
-  if(x.unit==='t'){const b=Math.min(...w.map(s=>+s.reps||1e9));return{v:-b,label:fmtT(b)}}
-  if(x.bw||x.unit||!w.some(s=>s.kg>0)){const v=w.reduce((a,s)=>a+(+s.reps||0),0),top=Math.max(...w.map(s=>+s.reps||0));return{v,label:w.length+'×'+top+(x.unit==='s'?' s':'')}}
-  let b=w[0],bv=0;w.forEach(s=>{const v=e1rm(s.kg,s.reps);if(v>bv){bv=v;b=s}});return{v:Math.round(bv*10)/10,label:r1(b.kg)+'×'+b.reps}}
 function ghostOf(l){if(!l||l.type!=='lift'||!['done','partial'].includes(l.status)||!(l.exercises||[]).length)return null;
   const pd=Object.keys(logs).filter(d=>d<l.date&&logs[d].key===l.key&&logs[d].type==='lift'&&['done','partial'].includes(logs[d].status)&&(logs[d].exercises||[]).some(e=>(e.sets||[]).some(s=>s.t!=='W'&&s.done))).sort().pop();
   if(!pd)return null;const g=logs[pd],rows=[];
@@ -4720,8 +5075,6 @@ let PB={};try{PB=JSON.parse(localStorage.getItem('plateBase')||'{}')||{}}catch(e
    skipped gets one same-muscle alternative. New exercises get 6 weeks before they can be rotated again; at most 2 swaps run at once.
    coach/rotation: {active: {original: {to, since, why}}, dismissed: {name: date}, tried: [names], ideas: [{from, to, why, def?}] from the 5am coach} ---------- */
 let rot={active:{},dismissed:{},tried:[],ideas:[]};
-function rotNudge(names){return'';if(!names||!names.length)return'';const i=rotIdeas().find(o=>names.includes(o.cur));if(!i)return'';
-  return'<div class="note rotn"><span><b>Coach idea</b> · '+esc(i.cur)+': '+esc(i.why.charAt(0).toLowerCase()+i.why.slice(1))+'. Try '+esc(i.to)+' instead? '+esc(rotDetail(i))+'</span>'+rotBtns(i,'Not now')+'</div>'}
 document.addEventListener('click',async e=>{const b=e.target.closest('button[data-rot]');if(!b)return;const k=b.dataset.rot;
   if(!db){toast('Open this page in the Claude app to save');return}
   rot.active=rot.active||{};rot.dismissed=rot.dismissed||{};rot.tried=rot.tried||[];
@@ -4743,12 +5096,6 @@ fetch('evidence.json').then(r=>r.ok?r.json():null).then(j=>{if(j&&j.topics){cons
 /* ---------- coach's watchlist: coach/insights is written by the 5am coach from his daily and past data ---------- */
 let insights=null;
 const INSK={risk:'Risk',watch:'Watching',idea:'Idea',win:'Win'},INSO={risk:0,watch:1,idea:2,win:3};
-function renderInsights(){const el=$('c-ins'),I=insItems();
-  if(el)el.innerHTML=I.length?I.map(insHtml).join('')+'<p class="msg" style="margin:0">Updated '+(insights.date?short(parse(insights.date)):'')+' by your coach, from your check-ins, workouts and history. Patterns in your own data, not proof.</p>':'<p class="empty">Each morning your coach scans your check-ins, workouts and history for patterns: what helps your sessions, what derails them, and what\'s trending. What it finds, and what it\'s doing about it, shows here.</p>';
-  const t=$('insToday');if(!t)return;const pp=propPending()[0];
-  if(pp&&mode==='preview'&&dayDiff(sel,today)===0){t.innerHTML='<div class="note insnote"><span><b>Your coach suggests:</b> '+esc(pp.title||TECH[pp.technique][0])+'. It only starts if you say yes.</span><button type="button" class="linkb" id="insMore" style="align-self:flex-start">See the suggestion</button></div>';$('insMore').onclick=()=>{setPT('coach');setView('prog');setTimeout(()=>{try{$('propcard').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}},80)};return}const top=I.find(i=>i.kind==='risk'||i.kind==='watch');
-  t.innerHTML=top&&mode==='preview'&&dayDiff(sel,today)===0?'<div class="note '+(top.kind==='risk'?'recover':'trim')+' insnote"><span><b>Coach is watching:</b> '+esc(top.title)+(top.action?'. '+esc(top.action):'')+'</span><button type="button" class="linkb" id="insMore" style="align-self:flex-start">See the watchlist</button></div>':'';
-  const m=$('insMore');if(m)m.onclick=()=>{setPT('coach');setView('prog');setTimeout(()=>{try{$('inscard').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){}},80)}}
 
 /* ---------- coach proposals: coach/proposals {items:[{id, technique: drop|superset|giant, title, plan, why, evidence, trial, status}]}.
    The coach may only use a technique he has accepted; the tracker ignores any technique without an accepted proposal. ---------- */
@@ -4807,7 +5154,6 @@ document.addEventListener('click',async e=>{const b=e.target.closest('button[dat
 /* ---------- shared helpers (weeks, weight, rewards) ---------- */
 let wts=[],rewards={};
 const hashN=s=>{let h=0;for(const c of String(s))h=(h*31+c.charCodeAt(0))>>>0;return h};
-function weekOutcome(w){const c=weekCounts(weekSun(w));return c.done>=5?'win':c.done>=3?'hold':'lose'}
 const VO2P=[[39.7,50],[46.4,70],[50,80],[55.5,90]]; /* FRIEND registry 2022, men 30–39, treadmill */
 let vo2=[];
 
@@ -4817,25 +5163,6 @@ const RSTATE={ready:'Ready',recovering:'Recovering',worked:'Worked',untrained:'N
 let recSel='',recLastSaved='';
 const RBOARD=['Quads','Hamstrings','Glutes','Calves','Back','Chest','Shoulders','Biceps','Triceps','Core','Grip'];
 const RORD={worked:0,recovering:1,ready:2,untrained:3};
-function renderRecovery(){const card=$('reccard');if(!card)return;const R={};RMUS.forEach(m=>R[m]=recoveryOf(m));
-  const rows=RBOARD.map(m=>{const r=R[m]||recoveryOf(m),wk=sets7(m),fl=r.state==='untrained'?[]:recFlags(m,r,wk),win=(r.near||r.fresh)?72:48;return{m,r,wk,fl,win}})
-    .sort((a,b)=>(b.fl.length?1:0)-(a.fl.length?1:0)||RORD[a.r.state]-RORD[b.r.state]||RBOARD.indexOf(a.m)-RBOARD.indexOf(b.m));
-  const c={worked:0,recovering:0,ready:0},nf=rows.filter(x=>x.fl.length).length;rows.forEach(x=>{if(c[x.r.state]!=null)c[x.r.state]++});
-  $('rsum').innerHTML='<div><b class="num">'+c.ready+'</b><span><i class="rd ready"></i>Ready</span></div><div><b class="num">'+c.recovering+'</b><span><i class="rd recovering"></i>Recovering</span></div><div><b class="num">'+c.worked+'</b><span><i class="rd worked"></i>Worked</span></div>'+(nf?'<div class="rsflag"><b class="num">'+nf+'</b><span><i class="rd flag"></i>Watch</span></div>':'');
-  $('rboard').innerHTML=rows.map(({m,r,wk,fl,win})=>{const t=TARGET[m],st=r.state;
-    const pct=st==='worked'?Math.max(4,Math.min(100,r.hrs/(win-6)*100)):st==='recovering'?82:st==='ready'?100:0;
-    const lab=fl.length?'Watch':st==='worked'?'Ready in '+Math.max(1,win-6-r.hrs)+' h':RSTATE[st];
-    const last=st==='untrained'?'No sets logged yet':DN[parse(r.date).getDay()]+' · '+esc((r.title||'').replace(/ · Express$/,''))+' · '+r.sets+' set'+(r.sets>1?'s':'');
-    let body='';
-    if(fl.length)body+=fl.map(x=>'<div class="rflag">'+esc(x)+'</div>').join('');
-    if(st!=='untrained'){body+='<span>'+esc(RSTATE[st])+(st==='worked'?' until about '+Math.max(1,win-6-r.hrs)+' h from now ('+win+' h window, counted in training mornings)':'')+'. Last trained '+DN[parse(r.date).getDay()]+' '+short(parse(r.date))+': '+esc(r.exs.join(', '))+'.</span>';
-      body+=r.why.length?'<small>'+esc(r.why.join(' · '))+'</small>':'<small>'+r.hrs+' h since, outside its window and no soreness logged.</small>';
-      if(r.perf)body+='<small>That session vs the one before: '+r.perf.beat+' beat, '+r.perf.tie+' matched, '+r.perf.lost+' behind.</small>'}
-    body+='<small>Last 7 days: '+wk+' working set'+(wk===1?'':'s')+(t?' · range '+t[0]+(t[1]!==t[0]?'–'+t[1]:'')+(LEGM.includes(m)||m==='Glutes'?'':' (maintenance)'):'')+'.</small>';
-    const vol=t?'<span class="rvol"><span class="rvt"><em style="left:'+(t[0]/Math.max(t[1]*1.5,wk)*100)+'%;width:'+Math.max(2,(t[1]-t[0])/Math.max(t[1]*1.5,wk)*100)+'%"></em><i style="width:'+Math.min(100,wk/Math.max(t[1]*1.5,wk)*100)+'%"></i></span><span class="num">'+wk+'/'+t[0]+(t[1]!==t[0]?'–'+t[1]:'')+'</span></span>':'';
-    return'<details class="rrow '+st+(fl.length?' flag':'')+'"'+(m===recSel?' open':'')+' data-rm="'+m+'"><summary><span class="rn">'+m+'</span><span class="rs">'+esc(lab)+'</span>'+
-      '<span class="rtrack"><i style="width:'+pct+'%"></i></span><span class="rmeta"><span>'+last+'</span>'+vol+'</span></summary><div class="rbody">'+body+'</div></details>'}).join('');
-  saveRecovery(R)}
 $('reccard').addEventListener('toggle',e=>{const t=e.target;if(t&&t.matches&&t.matches('details.rrow')&&t.open)recSel=t.dataset.rm},true);
 
 /* ---------- Body weight ---------- */
@@ -4934,22 +5261,9 @@ const CAL={mode:'week',anchor:null,pick:null};
    becomes a rest day: log status "moved" + movedTo); another session day swaps with it (log hostKey on both days).
    Same Monday-Sunday week only, today onwards, never a day that is done, started or skipped, never race week.
    A request tells her coach so it plans around the move. */
-const MV_DONE=['done','partial','in_progress','recovery','skipped'],MV_F=['hostKey','movedTo','movedFrom','movedBy','movedAt','movedPrev'],MV_HARD=new Set(['B','W','H']),MV_LOCK='2026-12-07';
+const MV_DONE=['done','partial','in_progress','recovery','skipped'],MV_F=['hostKey','movedTo','movedFrom','movedBy','movedAt','movedPrev'];
 const mvLbl=d=>DN[d.getDay()]+' '+short(d);
-function mvKey(d){const p=effPlan(d);if(p.pre||p.tbd||p.race)return null;return(p.type==='rest'||p.optional)?'S':p.key}
-function mvFree(d){const k=iso(d),l=logs[k];if(weekOf(d)<1||k>=MV_LOCK||dayDiff(d,today)<0)return false;if(l&&l.class)return false;if(l&&MV_DONE.includes(l.status))return false;if(cur&&cur.date===k&&cur.status==='in_progress')return false;return mvKey(d)!=null}
 const mvCanSrc=d=>!!db&&mvFree(d)&&mvKey(d)!=='S';
-function mvWarn(s,d){const ws=addDays(wkStart(s),-1),K=[...Array(9)].map((_,i)=>{const x=addDays(ws,i);return{x,k:mvKey(x)||'S'}});
-  const a=K.findIndex(o=>iso(o.x)===iso(s)),b=K.findIndex(o=>iso(o.x)===iso(d));if(a<0||b<0)return[];const t=K[a].k;K[a].k=K[b].k;K[b].k=t;
-  const out=[];for(let i=0;i<8;i++){const p=K[i],q=K[i+1];if(!(MV_HARD.has(p.k)&&MV_HARD.has(q.k)))continue;if(![a,b].some(j=>j===i||j===i+1))continue;
-    out.push(mvTitle(p.k,p.x)+' ('+DN[p.x.getDay()]+') and '+mvTitle(q.k,q.x)+' ('+DN[q.x.getDay()]+')')}
-  return out}
-function mvConfirmHtml(){const m=CAL.mv,s=parse(m.src),d=parse(m.dst),ks=mvKey(s),kd=mvKey(d),ts=mvTitle(ks,s),td=mvTitle(kd,d),W=mvWarn(s,d);
-  return'<div class="mvok" id="mvok"><h4 tabindex="-1">'+esc(ts)+' to '+esc(mvLbl(d))+'?</h4>'+
-    (kd==='S'?'<p>'+esc(mvLbl(s))+' becomes a rest day.</p>':'<p>'+esc(td)+' moves to '+esc(mvLbl(s))+'.</p>')+
-    (W.length?'<p class="w">Back to back: '+esc(W.join('; '))+'. Your plan keeps leg day, the hard Thursday run and the sim apart so your legs recover.</p>':'')+
-    '<p class="n">Same exercises and weights. Your coach sees the move and plans around it.</p>'+
-    '<div class="row"><button type="button" class="primary" data-mv="go">'+(W.length?'Move anyway':'Move it')+'</button><button type="button" data-mv="back">Pick another day</button></div></div>'}
 function calInfo(d){const p=effPlan(d),st=stateOf(d),l=logs[iso(d)],w=weekOf(d),k=p.key;
   const ty=p.race?'race':p.type==='rest'?'rest':k==='A'||k==='B'?'str':k==='R'||p.type==='cardio'?'run':k==='W'?'eng':k==='H'?'sim':'rest';
   let tag=p.race?'Race':p.type==='rest'?'':k==='A'?'Str A':k==='B'?'Str B':p.type==='cardio'?'Easy':k==='R'?'Run':k==='W'?'Engine':/^Test/.test(p.title)?'Test':k==='H'?'Sim':'';
@@ -4961,32 +5275,10 @@ function calInfo(d){const p=effPlan(d),st=stateOf(d),l=logs[iso(d)],w=weekOf(d),
 const CST={done:'Done',partial:'Part done',skipped:'Skipped',missed:'Missed',recovery:'Recovered',in_progress:'Started'};
 const CTY={str:'var(--c-str)',run:'var(--c-run)',eng:'var(--c-eng)',sim:'var(--c-sim)',race:'var(--gold,#d4ff2a)',rest:'transparent'};
 const PHL={'Ease in':['E','p1'],'Build':['B','p2'],'Peak':['P','p3'],'Taper + race':['T','p4']};
-function calWeekHtml(){const ws=wkStart(CAL.anchor),w=weekOf(ws),we=addDays(ws,6);let n=0,dn=0;
-  const rows=[...Array(7)].map((_,i)=>{const d=addDays(ws,i),f=calInfo(d);let[sc,st]=calStatus(f,d);if(f.p.type!=='rest'&&!f.p.optional){n++;if(f.st==='done'||f.st==='partial')dn++}
-    const mr=mvRow(d,f);if(mr&&mr.chip)[sc,st]=mr.chip;else if(mr)st=st||'';const l=logs[iso(d)],mf=l&&l.movedFrom&&l.hostKey?'Moved from '+l.movedFrom:'';
-    return'<button type="button" class="cwr'+(f.p.type==='rest'?' rest':'')+(f.today?' today':'')+(mr?mr.cls:'')+'" data-cal="'+iso(d)+'"'+(mr&&mr.cls===' off'?' aria-disabled="true"':'')+' style="--ty:'+CTY[f.ty]+'" aria-label="'+DN[d.getDay()]+' '+short(d)+': '+esc(f.p.title)+(st?', '+st:'')+(mr&&mr.warn?', '+mr.warn:'')+'"><span class="cd"><small>'+DN[d.getDay()]+'</small><b>'+d.getDate()+'</b></span><span class="ct"><b>'+esc(f.p.title)+(f.p.optional?' (optional)':'')+'</b>'+(mf?'<small>'+esc(mf)+'</small>':'')+(f.det?'<small>'+esc(f.det)+'</small>':'')+(mr&&mr.warn?'<small class="mvw">'+esc(mr.warn)+'</small>':'')+'</span>'+(st?'<span class="cst '+sc+'">'+st+'</span>':'<span></span>')+'</button>'}).join('');
-  const nav='<div class="calnav"><button type="button" data-calnav="-1" aria-label="Previous week">‹</button><div><b>'+(w<1?'Before week 1':PHASE[w]?'Week '+w+' · '+PHASE[w]:'After the race')+'</b><small>'+short(ws)+' – '+short(we)+'</small></div><button type="button" data-calnav="1" aria-label="Next week">›</button></div>';
-  const mvb=CAL.mv?'<div class="mvbar" role="status"><b>'+(CAL.mv.src?'Move '+esc(mvTitle(mvKey(parse(CAL.mv.src)),parse(CAL.mv.src)))+' to which day?':'Tap the session to move')+'</b><button type="button" class="ghost" data-mv="x">Cancel</button></div>':'';
-  const canMv=!CAL.mv&&db&&[...Array(7)].some((_,i)=>mvCanSrc(addDays(ws,i))),canRs=!CAL.mv&&db&&mvResetOk(ws);
-  const foot=(canMv||canRs)?'<div class="mvfoot">'+(canMv?'<button type="button" data-mv="start">Move a session</button>':'')+(canRs?'<button type="button" class="ghost" data-mv="reset">Put this week back</button>':'')+'</div>':'';
-  return nav+mvb+'<div class="cwk">'+rows+'</div>'+(CAL.mv&&CAL.mv.dst?mvConfirmHtml():'')+'<p class="cwsum">'+(n?dn+' of '+n+' sessions done':'No sessions this week')+(w>=1&&w<=7?' · '+Math.max(0,dayDiff(parse(RACE),today))+' days to race day':'')+'</p>'+foot}
-function calMonthHtml(){const a=CAL.anchor,m0=new Date(a.getFullYear(),a.getMonth(),1),m1=new Date(a.getFullYear(),a.getMonth()+1,0);let h='<div class="cmo" role="grid" aria-label="'+MN[m0.getMonth()]+' '+m0.getFullYear()+'"><span class="ch2">Wk</span>'+['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(x=>'<span class="ch2">'+x+'</span>').join('');
-  let n=0,dn=0;for(let ws=wkStart(m0);ws<=m1;ws=addDays(ws,7)){const w=weekOf(ws),ph=PHL[PHASE[w]];h+='<span class="cwn">'+(w>=1&&PHASE[w]?'W'+w:'')+(w>=1&&ph?'<i class="'+ph[1]+'">'+ph[0]+'</i>':'')+'</span>';
-    for(let i=0;i<7;i++){const d=addDays(ws,i),f=calInfo(d),out=d.getMonth()!==m0.getMonth(),mk=f.st==='done'?'✓':f.st==='partial'||f.st==='recovery'?'~':f.st==='skipped'||f.st==='missed'?'✕':'';
-      if(!out&&f.p.type!=='rest'&&!f.p.optional){n++;if(f.st==='done'||f.st==='partial')dn++}
-      h+='<button type="button" class="cc'+(f.p.race?' race':f.p.type==='rest'?' rest':'')+(out?' out':'')+(f.today?' today':'')+' '+f.st+'" data-cal="'+iso(d)+'" aria-pressed="'+(CAL.pick===iso(d))+'" style="--ty:'+CTY[f.ty]+'" aria-label="'+DN[d.getDay()]+' '+short(d)+': '+esc(f.p.title)+(CST[f.st]?', '+CST[f.st]:'')+'"><span class="n">'+d.getDate()+'</span>'+(f.tag?'<span class="tg">'+f.tag+'</span>':'')+(mk?'<span class="mk" aria-hidden="true">'+mk+'</span>':'')+'</button>'}}
-  h+='</div>';
-  const nav='<div class="calnav"><button type="button" data-calnav="-1" aria-label="Previous month">‹</button><div><b>'+['January','February','March','April','May','June','July','August','September','October','November','December'][m0.getMonth()]+' '+m0.getFullYear()+'</b><small>'+(n?dn+' of '+n+' sessions done':'Nothing planned')+'</small></div><button type="button" data-calnav="1" aria-label="Next month">›</button></div>';
-  const leg='<div class="cleg"><span><i style="background:var(--c-str)"></i>Strength</span><span><i style="background:var(--c-run)"></i>Run</span><span><i style="background:var(--c-eng)"></i>Engine</span><span><i style="background:var(--c-sim)"></i>Hyrox sim</span><span>✓ done</span><span>✕ missed</span><span>E/B/P/T ease in, build, peak, taper</span></div>';
-  let det='<div class="cdet" id="caldet"><small>Tap a day to see the session.</small></div>';
-  if(CAL.pick){const d=parse(CAL.pick),f=calInfo(d),[,st]=calStatus(f,d);det='<div class="cdet" id="caldet"><b>'+DN[d.getDay()]+' '+short(d)+' · '+esc(f.p.title)+(f.p.optional?' (optional)':'')+'</b>'+(f.det?'<small>'+esc(f.det)+'</small>':'')+(st?'<small>'+st+'</small>':'')+'<button type="button" class="primary" data-calopen="'+CAL.pick+'">Open this day</button>'+(mvCanSrc(d)?'<button type="button" data-mv="from" data-d="'+CAL.pick+'">Move this session</button>':'')+'</div>'}
-  return nav+h+leg+det}
 $('openCal').onclick=openCal;{const _t=document.querySelector('.top .t');if(_t){_t.onclick=openCal;_t.setAttribute('role','button');_t.setAttribute('tabindex','0');_t.setAttribute('aria-label','Open the calendar');_t.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openCal()}})}}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){const o=$('calsheet');if(o&&o._close)o._close()}});
 
 let progTab='coach';try{const t=localStorage.getItem('progTab');if(['coach','body','train'].includes(t))progTab=t}catch(e){}
-function setPT(t){progTab=t;$('view-prog').dataset.tab=t;document.querySelectorAll('#ptabs [data-pt]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.pt===t)));try{localStorage.setItem('progTab',t)}catch(e){}
-  try{$('ptabs').dataset.on=t;let i=0;document.querySelectorAll('#view-prog>section').forEach(x=>{if(x.dataset.pg===t){x.style.animationDelay=Math.min(i,4)*45+'ms';i++}else x.style.animationDelay=''})}catch(e){}}
 $('ptabs').addEventListener('click',e=>{const b=e.target.closest('[data-pt]');if(!b)return;setPT(b.dataset.pt);try{window.scrollTo({top:0})}catch(_){}});
 setPT(progTab);
 $('rvbtns').addEventListener('click',e=>{const b=e.target.closest('button[data-rv]');if(b)openReview(b.dataset.rv)});
@@ -5008,76 +5300,15 @@ $('testform').addEventListener('submit',async e=>{e.preventDefault();const m=$('
 let blockRep=null,targets=null,rvMode=null;
 const RV_LIFTS=['Hack squat','Leg press','Bulgarian split squat','Hip thrust','Hamstring curl','Smith calf raise','Incline DB press','Chest-supported row'];
 const RV_DEFAULT_T={workouts:18,mustdos:12,early:0.75,warmup:0.9,cooldown:0.6,lifts:4};
-function rvCompute(L,w1,w2){
-  const S=addDays(new Date(START),7*(w1-1)),E=addDays(new Date(START),7*w2-1),last=rvMode==='sample'?E:(E<today?E:today);
-  const weeks=[],dow=[0,0,0,0,0,0,0],starts=[],legs=[];let planned=0,done=0,must=0,mustP=0,early=0,startsN=0,wu=0,wuN=0,cd=0,cdN=0,dur=[],prs=0,aches={back:0,knees:0,shoulder:0},trs=[],hrvs=[];
-  for(let w=w1;w<=w2;w++){const sun=addDays(new Date(START),7*(w-1));let wd=0,wk=0,wp=0;const lg={Quads:0,Hamstrings:0,Glutes:0,Calves:0};
-    for(let i=0;i<7;i++){const d=addDays(sun,i);if(d>last)break;const k=iso(d),p=effPlan(d,L),l=L[k];
-      if(l)(l.exercises||[]).forEach(e=>{const x=X[e.name];if(!x)return;const n=e.sets.filter(s=>s.t!=='W'&&s.done).length;x.m.forEach(m=>{if(lg[m]!=null)lg[m]+=n})});
-      if(p.type==='rest'||p.optional)continue;wp++;const ok=l&&['done','partial'].includes(l.status);
-      if(ok){wd++;if(['A','B','L'].includes(p.key))wk++}else if(d<last||(l&&l.status==='skipped'))dow[d.getDay()]++;
-      if(['A','B','L'].includes(p.key))mustP++;
-      if(l&&ok){if(l.startedAt){const t=new Date(l.startedAt),hh=t.getHours()+t.getMinutes()/60;starts.push({d,h:hh});startsN++;if(hh<7.25)early++}
-        if(l.warmup!=null){wuN++;if(Object.values(l.warmup).filter(Boolean).length>=3)wu++}else wuN++;
-        cdN++;if(l.mobility&&(MOBS[l.key]||MOBS.A).every((_,j)=>l.mobility[j]))cd++;
-        if(l.durationMin&&l.type==='lift')dur.push(l.durationMin);prs+=(l.prs||[]).length}
-      if(l&&l.feel)Object.keys(aches).forEach(a=>{if(['sore','pain'].includes(l.feel[a]))aches[a]++});
-      if(l&&l.readiness&&l.readiness.tr!=null)trs.push(l.readiness.tr);if(l&&l.readiness&&typeof l.readiness.hrv==='number')hrvs.push(l.readiness.hrv)}
-    weeks.push({w,done:wd,key:wk,planned:wp});legs.push({w,...lg});planned+=wp;done+=wd;must+=wk}
-  const lifts=RV_LIFTS.map(n=>{let f=null,l=null;Object.keys(L).sort().forEach(k=>{const d=parse(k);if(d<S||d>E)return;(L[k].exercises||[]).forEach(e=>{if(e.name!==n)return;let t=0,kg=0;e.sets.forEach(s=>{if(s.t!=='W'&&s.done){t=Math.max(t,e1rm(s.kg,s.reps));kg=Math.max(kg,s.kg||0)}});if(!t)return;if(!f)f={t,kg};if(!l||t>=l.t)l={t,kg}})});return f&&l?{n,f,l,pct:Math.round((l.t-f.t)/f.t*100)}:null}).filter(Boolean);
-  const longR=[],hr=[];Object.keys(L).sort().forEach(k=>{const d=parse(k);if(d<S||d>E)return;const l=L[k];if(l.status!=='done'||!l.run||!l.run.done)return;
-    if(l.key==='L')longR.push({w:weekOf(d),y:+l.run.done.mins,plan:longRun(weekOf(d))});if(l.run.done.hr&&(l.key==='L'||l.key==='T'||(l.key==='C'&&weekOf(d)<=4)))hr.push({x:short(d),y:+l.run.done.hr,m:cmode(l,d)})});
-  {const cnt={};hr.forEach(h=>cnt[h.m]=(cnt[h.m]||0)+1);const top=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];if(top){const keep=hr.filter(h=>h.m===top);hr.length=0;keep.forEach(h=>hr.push(h));hr.mode=top}}
-  let streak=0,best=0;for(let d=new Date(S);d<=last;d=addDays(d,1)){const p=effPlan(d,L);if(p.type==='rest'||p.optional)continue;const l=L[iso(d)];if(l&&['done','partial','recovery'].includes(l.status)){streak++;best=Math.max(best,streak)}else if(d<last)streak=0}
-  return{w1,w2,weeks,dow,starts,legs,planned,done,must,mustP,early,startsN,wu,wuN,cd,cdN,dur,prs,aches,trs,hrvs,lifts,longR,hr,best}
-}
-function rvBars(weeks){const W=340,H=140,n=weeks.length,bw=(W-40)/n;let s='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Workouts per week">';
-  const y=v=>H-24-v*18;[3,5].forEach(v=>{s+='<line x1="30" x2="'+(W-6)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--line)" stroke-dasharray="4 3"/><text x="24" y="'+(y(v)+4)+'" text-anchor="end">'+v+'</text>'});
-  weeks.forEach((b,i)=>{const x=34+i*bw+bw*0.18,h=b.done*18;s+='<rect x="'+x+'" y="'+(H-24-b.planned*18)+'" width="'+(bw*0.64)+'" height="'+(b.planned*18)+'" rx="4" fill="var(--soft)"/><rect x="'+x+'" y="'+(H-24-h)+'" width="'+(bw*0.64)+'" height="'+Math.max(h,2)+'" rx="4" fill="'+(b.key>=3?'var(--done)':'var(--warn)')+'"/><text x="'+(x+bw*0.32)+'" y="'+(H-28-h)+'" text-anchor="middle" font-weight="600">'+b.done+'/'+b.planned+'</text><text x="'+(x+bw*0.32)+'" y="'+(H-8)+'" text-anchor="middle">Week '+b.w+'</text>'});
-  return s+'</svg><div class="legend"><span><i style="background:var(--done)"></i>all 3 must-dos</span><span><i style="background:var(--warn)"></i>a must-do missed</span><span><i style="background:var(--soft)"></i>planned</span></div>'}
-function rvStarts(st){if(st.length<2)return'<p class="empty">Start times appear once you\'ve started a few workouts in the tracker.</p>';
-  const W=340,H=130,pl=40,pr=8,lo=6.5,hi=7.75,x=i=>pl+(W-pl-pr)*i/(st.length-1),y=h=>12+(H-36)*(1-(Math.min(hi,Math.max(lo,h))-lo)/(hi-lo));
-  let s='<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Start times">';[[6.5,'6:30'],[7,'7:00'],[7.25,'7:15'],[7.5,'7:30']].forEach(([v,t])=>{s+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="'+(v===7.25?'var(--warn)':'var(--line)')+'"'+(v===7.25?' stroke-dasharray="5 3"':'')+'/><text x="'+(pl-6)+'" y="'+(y(v)+4)+'" text-anchor="end">'+t+'</text>'});
-  st.forEach((p,i)=>{s+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(p.h).toFixed(1)+'" r="5" fill="'+(p.h<7.25?'var(--done)':'var(--miss)')+'" stroke="var(--card)" stroke-width="1.5"/>'});
-  s+='<text x="'+pl+'" y="'+(H-6)+'">'+short(st[0].d)+'</text><text x="'+(W-pr)+'" y="'+(H-6)+'" text-anchor="end">'+short(st[st.length-1].d)+'</text>';return s+'</svg>'}
 function rvScore(c,T){const pct=(a,b)=>b?a/b:0,rows=[
     ['Workouts',c.done+'/'+c.planned,'≥ '+T.workouts,c.done>=Math.min(T.workouts,c.planned)],
-    ['Must-dos (Lower A, Lower B, long run)',c.must+'/'+c.mustP,(T.mustdos>=c.mustP?'all':'≥ '+T.mustdos),c.must>=Math.min(T.mustdos,c.mustP)],
+    ['Must-dos (Strength A, Strength B, Hyrox sim)',c.must+'/'+c.mustP,(T.mustdos>=c.mustP?'all':'≥ '+T.mustdos),c.must>=Math.min(T.mustdos,c.mustP)],
     ['Started by 7:15',Math.round(pct(c.early,c.startsN)*100)+'%','≥ '+Math.round(T.early*100)+'%',pct(c.early,c.startsN)>=T.early],
     ['Warm-up done',Math.round(pct(c.wu,c.wuN)*100)+'%','≥ '+Math.round(T.warmup*100)+'%',pct(c.wu,c.wuN)>=T.warmup],
     ['Cool-down done',Math.round(pct(c.cd,c.cdN)*100)+'%','≥ '+Math.round(T.cooldown*100)+'%',pct(c.cd,c.cdN)>=T.cooldown],
     ['Lifts that went up',c.lifts.filter(l=>l.pct>0).length+'/'+c.lifts.length,'≥ '+T.lifts,c.lifts.filter(l=>l.pct>0).length>=T.lifts]];
   const hit=rows.filter(r=>r[3]).length;
   return{hit,n:rows.length,html:'<div class="score">'+rows.map(r=>'<div class="srow"><span class="sk">'+(r[3]?'✓':'✕')+'</span><span class="sl">'+r[0]+'<small>target '+r[2]+'</small></span><b class="num" style="color:'+(r[3]?'var(--done)':'var(--miss)')+'">'+r[1]+'</b></div>').join('')+'</div>'}}
-function renderReview(){
-  const el=$('view-review');let L=logs,rep=blockRep,T=targets||RV_DEFAULT_T,w1,w2,isS=rvMode==='sample';
-  if(isS){const s=sampleData();L=s.L;rep=s.rep;T=s.prev;w1=1;w2=4}
-  else if(rvMode==='latest'&&blockRep&&blockRep.weeks){w1=blockRep.weeks[0];w2=blockRep.weeks[1];T=blockRep.graded||RV_DEFAULT_T}
-  else{const wk=Math.max(1,weekOf(today));w1=Math.floor((wk-1)/4)*4+1;w2=w1+3;rep=null;T=(blockRep&&blockRep.targets)||RV_DEFAULT_T}
-  const c=rvCompute(L,w1,w2),sc=rvScore(c,T),avg=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):null;
-  const grade=rep&&rep.grade||(sc.hit>=6?'A':sc.hit>=5?'B+':sc.hit>=4?'B':sc.hit>=3?'C':'D');
-  let h='<button class="back" id="rvBack">‹ Progress</button>'+(isS?'<div class="note trim">Example review with made-up numbers for weeks 1–4. Your real one lands on Sunday 8 Nov, after week 4.</div>':rvMode==='live'?'<div class="note">This block so far. It updates live as you log, and your coach grades it after week '+w2+'.</div>':'');
-  h+='<section class="hero rvh"><div class="hey">Block review · weeks '+w1+'–'+w2+(isS?' · example':'')+'</div><div class="grade"><b>'+esc(grade)+'</b><div><h1 class="ht">'+esc(rep&&rep.title||'Weeks '+w1+'–'+w2)+'</h1><span>'+sc.hit+' of '+sc.n+' targets hit</span></div></div>'+(rep&&rep.text?'<p>'+esc(rep.text)+'</p>':'<p>Your coach adds the verdict, causes and changes at the end of the block. The numbers below update live.</p>')+'</section>';
-  h+='<section class="card"><h2>Scorecard vs targets</h2>'+sc.html+'</section>';
-  h+='<div class="stats"><div class="stat"><b class="num">'+c.best+'</b><span>best streak</span></div><div class="stat"><b class="num">'+c.prs+'</b><span>PRs</span></div><div class="stat"><b class="num">'+(avg(c.dur)||'–')+'</b><span>avg minutes</span></div></div>';
-  h+='<section class="card"><h2>Consistency</h2>'+rvBars(c.weeks)+'<h3 class="sub">Misses by day</h3>'+rvDow(c.dow)+'</section>';
-  h+='<section class="card"><h2>Start times</h2><p class="msg" style="margin:0">'+c.early+' of '+c.startsN+' sessions started by 7:15</p>'+rvStarts(c.starts)+'</section>';
-  h+='<section class="card"><h2>Strength · change this block</h2>'+rvLifts(c.lifts)+'</section>';
-  h+='<section class="card"><h2>Leg volume per week</h2>'+rvLegs(c.legs)+'</section>';
-  h+='<section class="card"><h2>Long run vs plan</h2>'+rvRuns(c.longR)+'<h3 class="sub">'+(CMODE_A[c.hr.mode]||'Easy cardio')+' heart rate</h3>'+(c.hr.length>1?'<div class="big"><b class="num">'+(c.hr[c.hr.length-1].y-c.hr[0].y)+' bpm</b><span>same easy effort, '+c.hr[0].y+' → '+c.hr[c.hr.length-1].y+' bpm</span></div>'+lineChart(c.hr,{label:(CMODE_A[c.hr.mode]||'Easy cardio')+' heart rate'}):'<p class="empty">Log heart rate on easy cardio to see your engine grow.</p>')+'</section>';
-  {const S0=iso(addDays(new Date(START),7*(w1-1))),E0=iso(addDays(new Date(START),7*w2-1));h+='<section class="card"><h2>Exercise habits this block</h2>'+habitsHtml(exHabits(L,S0,E0),6)+'</section>'}
-  h+='<section class="card"><h2>Body and habits</h2><div class="score">'+
-    '<div class="srow"><span class="sk">🔥</span><span class="sl">Warm-ups done</span><b class="num">'+c.wu+'/'+c.wuN+'</b></div>'+
-    '<div class="srow"><span class="sk">🧘</span><span class="sl">Cool-downs done</span><b class="num">'+c.cd+'/'+c.cdN+'</b></div>'+
-    '<div class="srow"><span class="sk">⚠</span><span class="sl">Sore days<small>back '+c.aches.back+' · knees '+c.aches.knees+' · shoulder '+c.aches.shoulder+'</small></span><b class="num">'+(c.aches.back+c.aches.knees+c.aches.shoulder)+'</b></div>'+
-    (c.trs.length?'<div class="srow"><span class="sk">⌚</span><span class="sl">Avg Training Readiness</span><b class="num">'+avg(c.trs)+'</b></div>':c.hrvs&&c.hrvs.length?'<div class="srow"><span class="sk">⌚</span><span class="sl">Avg overnight HRV</span><b class="num">'+avg(c.hrvs)+' ms</b></div>':'')+'</div></section>';
-  if(rep&&(rep.wins||rep.problems||rep.changes)){
-    if(rep.wins&&rep.wins.length)h+='<section class="card"><h2>What worked</h2><ul class="rvl">'+rep.wins.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></section>';
-    if(rep.problems&&rep.problems.length)h+='<section class="card"><h2>What cost you, and the fix</h2>'+rep.problems.map(p=>'<div class="prob"><b>'+esc(p.issue)+'</b><small><em>Why:</em> '+esc(p.cause)+'</small><small><em>Fix:</em> '+esc(p.fix)+'</small></div>').join('')+'</section>';
-    if(rep.changes&&rep.changes.length)h+='<section class="card"><h2>Plan changes for next block</h2><ul class="rvl">'+rep.changes.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></section>';
-    const nt=rep.targets;if(nt)h+='<section class="card"><h2>Your targets for weeks '+(w2+1)+'–'+(w2+4)+'</h2><p class="msg" style="margin:0">Your coach checks these every day and grades you on them next block.</p><div class="score">'+
-      [['Workouts','≥ '+nt.workouts+' of 20'],['Must-dos','all '+nt.mustdos],['Start by 7:15','≥ '+Math.round(nt.early*100)+'% of sessions'],['Warm-up','≥ '+Math.round(nt.warmup*100)+'%'],['Cool-down','≥ '+Math.round(nt.cooldown*100)+'%']].concat(nt.liftGoals||[]).map(r=>'<div class="srow"><span class="sk">◎</span><span class="sl">'+esc(r[0])+'</span><b class="num">'+esc(r[1])+'</b></div>').join('')+'</div></section>'}
-  el.innerHTML=h;$('rvBack').onclick=()=>setView('prog')}
 
 /* navigation */
 function setView(v){setTimeout(()=>navInd(false),0);view=v;$('view-today').hidden=v!=='today';$('view-prog').hidden=v!=='prog';$('view-review').hidden=v!=='review';$('view-ev').hidden=v!=='ev';if(v==='ev')renderEv();$('view-badges').hidden=v!=='badges';['today','prog','badges'].forEach(k=>{const on=v===k||((v==='review'||v==='ev')&&k==='prog');if(on)$('tab-'+k).setAttribute('aria-current','page');else $('tab-'+k).removeAttribute('aria-current')});if(v==='prog')renderProgress();if(v==='review')renderReview();if(v==='badges')renderGame();try{window.scrollTo({top:0})}catch(e){}}
@@ -5088,26 +5319,10 @@ const mindXP=m=>{const ss=(m&&m.sessions)||[];return ss.some(x=>x.completed)?15:
 function bell(big){try{ensureAudio();if(!audio)return;const f0=big?196:293.66,now=audio.currentTime+.03,out=audio.createGain();out.gain.value=.6;out.connect(audio.destination);
   [[f0,1,.05],[f0*2.76,.55,.016],[f0*5.4,.3,.007]].forEach(([f,dl,v])=>{const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=f;
     g.gain.setValueAtTime(.0001,now);g.gain.exponentialRampToValueAtTime(v,now+.02);g.gain.exponentialRampToValueAtTime(.0001,now+7*dl);o.connect(g);g.connect(out);o.start(now);o.stop(now+7*dl+.1)})}catch(e){}}
-function parkedHtml(){let p=null;try{p=JSON.parse(localStorage.getItem('parked')||'null')}catch(e){}if(!p||!p.text)return'';
-  if(!(p.date===iso(addDays(today,-1))&&new Date().getHours()<14))return'';
-  return'<section class="card"><div class="head"><h2>Parked last night</h2><button type="button" class="linkbtn" id="parkClear">Clear</button></div><p class="parked">'+esc(p.text)+'</p></section>'}
 
 /* end of day: the bedtime cool-down, one tap from Today any night */
 let night=null;
-function renderNight(el){const pl=night.pl,L=nightList(pl),n=L.filter((_,i)=>night.t[i]).length,done=n>=L.length,cool=night.part!=='mind';let h;
-  if(cool){h='<section class="nighthero cool"><div class="hey">Cool-down · '+(pl.full?'6':'5')+' min</div><h1>Stretch it out</h1><p>'+esc(pl.why)+'. Straight after training or later, whenever suits.</p></section>';
-    h+='<section class="card mob"><div class="head"><h2>Cool-down</h2><span class="badge '+(done?'done':'open')+'">'+n+'/'+L.length+'</span></div>'+L.map((x,i)=>tickRow(x,i,'data-night',night.t[i])).join('')+'</section>';
-    h+='<button class="'+(done?'primary':'')+'" id="endDay">'+(done?'Done ✓':'Done'+(n?' · '+n+' of '+L.length+' stretches':''))+'</button>'+'<button class="ghost" id="nightBack">Back</button>'}
-  el.innerHTML=h;
-  el.querySelectorAll('input[data-night]').forEach(c=>c.onchange=()=>{night.t[c.dataset.night]=c.checked;renderNight(el)});
-  $('nightBack').onclick=()=>{mode=night.back==='night'?'preview':night.back;night=null;loadSession();renderAll(true)};
-  if($('endDay'))$('endDay').onclick=()=>endDay();}
-async function endDay(){const pl=night.pl,L=nightList(pl),n=L.filter((_,i)=>night.t[i]).length,all=n>=L.length;
-  await saveNight();
-  night=null;mode='preview';loadSession();renderAll(true);
-  toast(all?'Cool-down done'+(pl.save?' · +10 XP':''):n?n+' of '+L.length+' stretches logged':'Cool-down closed')}
-function nightBtnHtml(){const c='nightbtn';const CH='<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';const mob=!!document.querySelector('#session .card.mob');if(mob)return'';return'<div class="nightrow"><div class="nrh"><h2>After training</h2><span>Now or later</span></div>'+(mob?'':'<button class="'+c+'" id="openCool"><span class="nic c" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="14" cy="4.5" r="2"/><path d="M4 21l5-6 3 2 2-6 6-2M12 17l2 4"/></svg></span><span class="nt"><b>Cool-down</b><small>5–6 min · stretches for today</small></span>'+CH+'</button>')+'</div>'}
-$('session').addEventListener('click',e=>{if(e.target.closest('#openCool')||e.target.closest('#openNight'))openNight('cool');if(e.target.closest('#parkClear')){try{localStorage.removeItem('parked')}catch(_){}renderSession()}});
+$('session').addEventListener('click',e=>{if(e.target.closest('#parkClear')){try{localStorage.removeItem('parked')}catch(_){}renderSession()}});
 
 /* ---------- achievement pop-up: coach/achieve {id, from, until, kicker, title, sub, quote, quoteBy, wins:[], next:[], raceDate (ISO, days counted live) or days, daysLabel, btn}. Shows on Today until she claims it ---------- */
 let OWNERV=false;try{window.claude&&claude.use&&claude.use('user').then(u=>{if(!u||!u.isOwner)return;return Promise.resolve(u.isOwner()).then(v=>{OWNERV=!!v})}).catch(()=>{})}catch(e){}
@@ -5153,16 +5368,12 @@ function pnBoom(el,p,now){if(el._boom)return;el._boom=1;pnStop(el);try{localStor
   at(380,()=>{el.classList.remove('pn-glitch');el.classList.add('pn-off')});
   at(840,()=>{const h=el.offsetHeight;el.style.height=h+'px';el.style.overflow='hidden';void el.offsetHeight;el.style.transition='height .28s cubic-bezier(.215,.61,.355,1),margin .28s';el.style.height='0px';el.style.marginBottom='-12px'});
   at(1140,end)}
-function renderAll(full){try{renderCal()}catch(e){}try{renderPatch()}catch(e){}try{renderAchv()}catch(e){}renderTop();renderGame();if(full||!readyBusy)renderReady();if(full)renderSession();renderReqs();try{renderInsights()}catch(e){}if(view==='prog')renderProgress()}
-function go(d){if(readyBusy){clearTimeout(window._rt);saveReady(iso(sel))}if(mode==='live'||mode==='feedback')persist(true);stopRest();picker=null;sel=d;readyOpen=false;loadSession();renderAll(true)}
 $('prev').onclick=()=>go(addDays(sel,-1));$('next').onclick=()=>go(addDays(sel,1));
 
 /* day rollover: the app can keep this page alive overnight */
-function rollDay(){const n=new Date(),t=new Date(n.getFullYear(),n.getMonth(),n.getDate());if(iso(t)===iso(today)){autoClose();return}const was=iso(sel)===iso(today);today=t;setTimeout(autoClose,50);if(mode==='night'){renderTop();renderGame();return}if(was&&mode!=='live'&&mode!=='feedback'){sel=new Date(today);readyOpen=false;loadSession()}renderAll(true)}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')rollDay()});setInterval(rollDay,60000);
 
 /* forgot to tap Finish: close it out from the ticked sets */
-function staleOpen(l){if(!l||l.status!=='in_progress')return false;if(l.date<iso(today))return true;const st=Date.parse(l.startedAt||'');return st&&Date.now()-st>3*3600e3}
 
 /* boot */
 try{const dr=localStorage.getItem('draft-'+iso(today));if(dr){const d=JSON.parse(dr);if(d&&d.status==='in_progress')logs[d.date]=d}}catch(e){}
