@@ -4148,6 +4148,13 @@ function staleOpen(l){if(!l||l.status!=='in_progress')return false;const st=Date
 function history(name,before){
   const L=histIndex()[slug(name)]||[];return L.filter(h=>h.date<before);
 }
+/* 25 Nov 2026: swaps. A swapped exercise is logged under the name he actually did, with swappedFrom = the planned one.
+   Odysseus used to see only the new name, so "last week vs today" compared different lifts. These helpers tell it what replaced what. */
+function odySw(){const m={};Object.keys(logs).forEach(k=>{const l=logs[k];if(!l||!l.exercises)return;l.exercises.forEach(e=>{if(!e||!e.swappedFrom)return;
+  const d=(e.sets||[]).filter(z=>z.t!=='W'&&z.t!=='D'&&z.done);(m[k]=m[k]||[]).push({from:e.swappedFrom,to:e.name,n:d.length,sets:d})})});return m}
+function odySetStr(x,sets){x=x||{};return sets.map(z=>(x.bw||!+z.kg?'':r1(z.kg)+'×')+z.reps+(x.unit==='s'?' s':x.unit==='m'?' m':'')).join(', ')}
+function odyExLine(e){const ws2=(e.sets||[]).filter(z=>z.t!=='W'&&z.done);if(!ws2.length)return'';const top=ws2.reduce((a,z)=>(+z.kg||0)>(+a.kg||0)?z:a,ws2[0]);
+  return e.name+(e.swappedFrom?' (instead of '+e.swappedFrom+')':'')+' '+ws2.length+' sets top '+(+top.kg?r1(top.kg)+'×':'')+top.reps}
 function renderRecovery(){const card=$('reccard');if(!card)return;const R={};RMUS.forEach(m=>R[m]=recoveryOf(m));
   const rows=RBOARD.map(m=>{const r=R[m]||recoveryOf(m),wk=sets7(m),fl=r.state==='untrained'?[]:recFlags(m,r,wk),win=(r.near||r.fresh)?72:48;return{m,r,wk,fl,win}})
     .sort((a,b)=>(b.fl.length?1:0)-(a.fl.length?1:0)||RORD[a.r.state]-RORD[b.r.state]||RBOARD.indexOf(a.m)-RBOARD.indexOf(b.m));
@@ -6152,14 +6159,20 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
    execute(a){const n=odyName(a.exercise),x=X[n]||{},H=history(n,'9999-12-31'),lim=Math.max(1,Math.min(40,+a.limit||20));let best=null;
      const rows=H.map(h=>{let top=h.sets[0],e1=0;h.sets.forEach(z=>{const v=x.bw||x.unit?0:e1rm(z.kg,z.reps);if(v>e1){e1=v;top=z}else if(!e1&&(+z.reps||0)>(+top.reps||0))top=z});if(e1&&(!best||e1>best.e1))best={date:h.date,e1:Math.round(e1),set:r1(top.kg)+'×'+top.reps};
        return{date:h.date,sets:h.sets.map(z=>(x.bw||!+z.kg?'':r1(z.kg)+'×')+z.reps+(x.unit==='s'?' s':x.unit==='m'?' m':'')).join(', '),top:(x.bw||!+top.kg?'':r1(top.kg)+'×')+top.reps,e1rm:e1?Math.round(e1):null}});
-     return{exercise:n,unit:x.unit||'reps',sessions_logged:H.length,best_e1rm:best,first:H.length?H[H.length-1].date:null,rows:rows.slice(0,lim)}}},
+     const SW=odySw(),rep=[];rows.forEach(r=>{const q=(SW[r.date]||[]).find(s=>s.to===n);if(q)r.swapped_from=q.from});
+     Object.keys(SW).sort().reverse().forEach(k=>SW[k].filter(q=>q.from===n&&q.n).forEach(q=>rep.push({date:k,replaced_by:q.to,sets:odySetStr(X[q.to],q.sets)})));
+     const o={exercise:n,unit:x.unit||'reps',sessions_logged:H.length,best_e1rm:best,first:H.length?H[H.length-1].date:null,rows:rows.slice(0,lim)};
+     if(rep.length){o.replaced_on=rep.slice(0,lim);o.note='On the replaced_on dates he did not do '+n+': he swapped it for the exercise shown. Do not read that as a drop or a missed lift; compare the replacement with its own history, and say it was a swap.'}
+     if(rows.some(r=>r.swapped_from))o.swap_note='Rows with swapped_from were done instead of that planned exercise, so compare them with care.';
+     return o}},
   {name:'sessions',description:'His logged sessions between two dates (YYYY-MM-DD): date, title, status, minutes, working sets done, volume, PRs, cardio minutes and heart rate, notes. Max 60 rows.',
    inputSchema:{type:'object',properties:{from:{type:'string'},to:{type:'string'}},required:['from']},
-   execute(a){const f=String(a.from||'').slice(0,10),t=String(a.to||iso(today)).slice(0,10);
+   execute(a){const f=String(a.from||'').slice(0,10),t=String(a.to||iso(today)).slice(0,10),SWD=odySw(),short=(Date.parse(t)-Date.parse(f))/864e5<=21;
      const rows=Object.keys(logs).filter(k=>k>=f&&k<=t).sort().map(k=>{const l=logs[k];if(!l||!l.status||l.status==='open')return null;const o={date:k,title:l.title||l.key||'',status:l.status};
        if(l.durationMin)o.mins=l.durationMin;if(l.setsDone)o.sets=l.setsDone;if(l.volume)o.volume_kg=l.volume;if(l.prs&&l.prs.length)o.prs=l.prs.map(p=>p.name+' e1RM '+p.e1);
        if(l.run&&l.run.done&&l.run.done.mins)o.cardio=l.run.done.mins+' min'+(l.run.done.hr?' '+l.run.done.hr+' bpm':'')+(l.run.done.km?' '+l.run.done.km+' km':'');
-       if(l.skippedEx&&l.skippedEx.length)o.skipped_exercises=l.skippedEx;if(l.note)o.note=String(l.note).slice(0,160);return o}).filter(Boolean);
+       if(l.skippedEx&&l.skippedEx.length)o.skipped_exercises=l.skippedEx;if(l.note)o.note=String(l.note).slice(0,160);
+       if(SWD[k])o.swaps=SWD[k].map(q=>q.from+' → '+q.to);if(short&&l.exercises){const ex=l.exercises.map(odyExLine).filter(Boolean);if(ex.length)o.exercises=ex}return o}).filter(Boolean);
      return{from:f,to:t,count:rows.length,rows:rows.slice(-60)}}},
   {name:'body',description:'His body weight log, waist and grip from check-ins, and the targets set by his coach.',
    inputSchema:{type:'object',properties:{}},
@@ -6191,14 +6204,14 @@ function odyCtx(){const L=[],t=today,ws=wkStart(t),w=weekOf(t);
   L.push('Today: '+DN[t.getDay()]+' '+iso(t)+' · week '+w+' · '+(phaseTag(w)||'')+(dayOff(iso(t))?' · his day off':''));
   L.push('This week: '+[...Array(7)].map((_,i)=>{const d=addDays(ws,i),p=effPlan(d);return DN[d.getDay()]+' '+iso(d).slice(5)+' '+(p.type==='rest'?'rest':p.title)+' ['+stateOf(d)+']'}).join('; '));
   const day=dayDiff(sel,t)>=0?sel:t,s=buildSession(day);odyRestorePhase();
-  if(s&&s.type==='lift')L.push('Session on '+iso(day)+' ('+s.title+'): '+(s.exercises||[]).map(e=>{const x=X[e.name]||{},n=odyW(e);return e.name+' '+n.length+'×'+(n[0]?n[0].treps:'')+(x.unit==='s'?' s':'')+(x.bw?' BW':' @'+r1(odyKg(e))+' kg')+(e.sets.some(z=>z.t==='D')?' +drop':'')+(e.ss?' (superset with '+e.ss+')':'')}).join('; '));
+  if(s&&s.type==='lift')L.push('Session on '+iso(day)+' ('+s.title+'): '+(s.exercises||[]).map(e=>{const x=X[e.name]||{},n=odyW(e);return e.name+(e.swappedFrom?' (instead of '+e.swappedFrom+')':'')+' '+n.length+'×'+(n[0]?n[0].treps:'')+(x.unit==='s'?' s':'')+(x.bw?' BW':' @'+r1(odyKg(e))+' kg')+(e.sets.some(z=>z.t==='D')?' +drop':'')+(e.ss?' (superset with '+e.ss+')':'')}).join('; '));
   else if(s&&s.type==='cardio'&&s.run)L.push('Session on '+iso(day)+': '+s.title+' · '+s.run.mins+' min · '+s.run.hr);else L.push('Session on '+iso(day)+': '+(s?s.title:'rest'));
   {const r=(logs[iso(t)]||{}).readiness;if(r&&r.verdict){const g=gFlags(r,iso(t)).map(x=>x[1]),own=['go','trim','recover'].includes(r.override);
     L.push('Check-in today: '+r.verdict+(own?' (his own call; the numbers said '+(r.autoVerdict||'go')+')':'')+(g.length?' · flags: '+g.join(', '):'')+' · '+['hrv','restingHR','sleepScore','bodyBattery'].filter(k=>typeof r[k]==='number').map(k=>k+' '+r[k]).join(', ')+((r.auto||[]).length?' (from Garmin)':''))}else L.push('Check-in today: none yet')}
   if(s&&s.express){try{const f=odyFull(day);odyRestorePhase();if(f&&f.exercises)L.push('Full session for that day (before Express): '+f.title+': '+f.exercises.map(e=>{const x=X[e.name]||{},n=odyW(e);return e.name+' '+n.length+'×'+(n[0]?n[0].treps:'')+(x.bw?' BW':' @'+r1(odyKg(e))+' kg')}).join('; ')+'. To go back to it use tweak_session op full (or change_workout op full mid-workout).')}catch(e){}}
   const tw=ODY.tw[iso(day)];if(tw&&tw.entries&&tw.entries.length)L.push('Already changed in the chat for that day: '+tw.entries.map(e=>e.summary).join(' | '));
   const lg=[];for(let i=1;i<=14;i++){const d=addDays(t,-i),k=iso(d),l=logs[k];if(!l||!l.status||l.status==='open')continue;
-    let b=k+' '+(l.title||l.key||'')+' '+l.status;if(l.exercises)b+=': '+l.exercises.map(e=>{const ws2=(e.sets||[]).filter(z=>z.t!=='W'&&z.done);if(!ws2.length)return'';const top=ws2.reduce((a,z)=>(+z.kg||0)>(+a.kg||0)?z:a,ws2[0]);return e.name+' '+ws2.length+' sets top '+(+top.kg?r1(top.kg)+'×':'')+top.reps}).filter(Boolean).join(', ');
+    let b=k+' '+(l.title||l.key||'')+' '+l.status;if(l.exercises)b+=': '+l.exercises.map(odyExLine).filter(Boolean).join(', ');
     if(l.run&&l.run.done&&l.run.done.mins)b+=': '+l.run.done.mins+' min'+(l.run.done.hr?' '+l.run.done.hr+' bpm':'');if(l.feel)b+=' · aches '+JSON.stringify(l.feel);lg.push(b)}
   L.push('Last 14 days: '+(lg.join(' | ')||'nothing logged'));
   try{L.push('Recovery now: '+RMUS.map(m=>{const r=recoveryOf(m);return m+' '+r.state+(r.hrs!=null&&r.state!=='untrained'?' ('+r.hrs+' h)':'')}).join(', '))}catch(e){}
