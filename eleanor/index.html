@@ -4075,6 +4075,13 @@ function staleOpen(l){if(!l||l.status!=='in_progress')return false;const st=Date
 function history(name,before){
   const L=histIndex()[slug(name)]||[];return L.filter(h=>h.date<before);
 }
+/* 25 Nov 2026: swaps. A swapped exercise is logged under the name he actually did, with swappedFrom = the planned one.
+   Odysseus used to see only the new name, so "last week vs today" compared different lifts. These helpers tell it what replaced what. */
+function odySw(){const m={};Object.keys(logs).forEach(k=>{const l=logs[k];if(!l||!l.exercises)return;l.exercises.forEach(e=>{if(!e||!e.swappedFrom)return;
+  const d=(e.sets||[]).filter(z=>z.t!=='W'&&z.t!=='D'&&z.done);(m[k]=m[k]||[]).push({from:e.swappedFrom,to:e.name,n:d.length,sets:d})})});return m}
+function odySetStr(x,sets){x=x||{};return sets.map(z=>(x.bw||!+z.kg?'':r1(z.kg)+'×')+z.reps+(x.unit==='s'?' s':x.unit==='m'?' m':'')).join(', ')}
+function odyExLine(e){const ws2=(e.sets||[]).filter(z=>z.t!=='W'&&z.done);if(!ws2.length)return'';const top=ws2.reduce((a,z)=>(+z.kg||0)>(+a.kg||0)?z:a,ws2[0]);
+  return e.name+(e.swappedFrom?' (instead of '+e.swappedFrom+')':'')+' '+ws2.length+' sets top '+(+top.kg?r1(top.kg)+'×':'')+top.reps}
 function renderRecovery(){const card=$('reccard');if(!card)return;const R={};RMUS.forEach(m=>R[m]=recoveryOf(m));
   const rows=RBOARD.map(m=>{const r=R[m]||recoveryOf(m),wk=sets7(m),fl=r.state==='untrained'?[]:recFlags(m,r,wk),win=(r.near||r.fresh)?72:48;return{m,r,wk,fl,win}})
     .sort((a,b)=>(b.fl.length?1:0)-(a.fl.length?1:0)||RORD[a.r.state]-RORD[b.r.state]||RBOARD.indexOf(a.m)-RBOARD.indexOf(b.m));
@@ -5723,7 +5730,7 @@ const odyK=()=>iso(today);
 const odyEsc=s=>esc(s);
 const AK_BASE=`You are the coach chat inside a HYROX training app. You talk to the athlete herself.
 WHAT YOU DO:
-1. Answer questions about her own data. The DATA block has this week, today's session and the last 21 days. For older or deeper questions (a lift's trend, run and row times, a date range) use the read tools: history and sessions. Give real numbers and dates. Times are m:ss. Be statistically honest: compare with her own earlier weeks, and don't call one data point a trend.
+1. Answer questions about her own data. The DATA block has this week, today's session and the last 21 days. For older or deeper questions (a lift's trend, run and row times, a date range) use the read tools: history and sessions. Give real numbers and dates. Times are m:ss. SWAPS: a lift is logged under the exercise she actually did. "(instead of X)" and replaced_on mean she swapped X out that day (e.g. the machine was taken). When you summarise a session or compare this week with an earlier one, match each exercise with the one it replaced, say plainly it was a swap, and never call the planned lift missing or a drop; compare the replacement with its own history (history on both names). Be statistically honest: compare with her own earlier weeks, and don't call one data point a trend.
 2. General questions: HYROX stations and pacing, technique and form cues, running, recovery, sleep, food and protein. Answer from established sports science, plainly; say when evidence is thin.
 3. Change her training when she asks (her call, always: do what she asks unless it's unsafe, then say why in one line and offer the closest safe option):
 - change_today: today's weights (at most 20% in one go), a backup lift for a taken machine, Express, back to the full session, or a rest day.
@@ -5745,7 +5752,7 @@ const akUnit=n=>{const x=X[n]||{};return x.unit==='t'?'t':x.unit==='m'?'m':x.uni
 function akSet(n,z){const u=akUnit(n),kg=+z.kg||0;if(u==='t')return fmtT(+z.reps||0);return(kg?r1(kg)+(n==="Farmer's carry"?' kg/hand':' kg')+'×':'')+(z.reps==null?'?':z.reps)+(u==='m'?' m':u==='s'?' s':'')}
 function akLog(k,l){let b=k+' '+DN[parse(k).getDay()]+' '+(l.title||l.key||'')+' '+l.status+(l.express?' (Express)':'')+(l.durationMin?' '+l.durationMin+' min':'');
   if(l.class)b+=' · gym class instead';
-  if(Array.isArray(l.exercises)){const ex=l.exercises.map(e=>{const d=akW(e).filter(z=>z.done);return d.length?e.name+' '+d.map(z=>akSet(e.name,z)).join(', '):''}).filter(Boolean);if(ex.length)b+=': '+ex.join('; ')}
+  if(Array.isArray(l.exercises)){const ex=l.exercises.map(e=>{const d=akW(e).filter(z=>z.done);return d.length?e.name+(e.swappedFrom?' (instead of '+e.swappedFrom+')':'')+' '+d.map(z=>akSet(e.name,z)).join(', '):''}).filter(Boolean);if(ex.length)b+=': '+ex.join('; ')}
   const r=l.run&&l.run.done;if(r&&(r.mins||r.km))b+=' · run '+(r.mins?r.mins+' min':'')+(r.km?' '+r.km+' km':'')+(r.hr?' '+r.hr+' bpm':'')+(r.effort?' effort '+r.effort:'');
   if(l.readiness&&l.readiness.quick)b+=' · morning: '+l.readiness.quick;
   if(l.note)b+=' · her note: "'+String(l.note).slice(0,200)+'"';
@@ -5756,7 +5763,7 @@ function odyCtx(){const L=[],t=today,ws=wkStart(t),w=weekOf(t),dl=dayDiff(parse(
   L.push('Today: '+DN[t.getDay()]+' '+iso(t)+' · plan week '+w+' · '+(PHASE[w]||'')+(dl>=0?' · '+dl+' days to race day ('+RACE+')':''));
   L.push('This week: '+[...Array(7)].map((_,i)=>{const d=addDays(ws,i),p=effPlan(d);return DN[d.getDay()]+' '+iso(d).slice(5)+' '+(p.type==='rest'?'rest':p.title)+' ['+stateOf(d)+']'}).join('; '));
   const s=akToday();
-  if(s&&s.type==='lift')L.push('Today\'s session ('+s.title+'): '+(s.exercises||[]).map(e=>{const x=X[e.name]||{},n=akW(e).filter(z=>z.t==='N');return e.name+' '+n.length+'×'+(n[0]?n[0].treps:'')+(akUnit(e.name)==='t'?' (time, lower is better)':akUnit(e.name)==='m'?' m':akUnit(e.name)==='s'?' s':'')+(x.bw?' bodyweight':n[0]&&n[0].tkg?' @'+r1(n[0].tkg)+' kg':'')+(e.why?' ('+e.why+')':'')}).join('; '));
+  if(s&&s.type==='lift')L.push('Today\'s session ('+s.title+'): '+(s.exercises||[]).map(e=>{const x=X[e.name]||{},n=akW(e).filter(z=>z.t==='N');return e.name+(e.swappedFrom?' (instead of '+e.swappedFrom+')':'')+' '+n.length+'×'+(n[0]?n[0].treps:'')+(akUnit(e.name)==='t'?' (time, lower is better)':akUnit(e.name)==='m'?' m':akUnit(e.name)==='s'?' s':'')+(x.bw?' bodyweight':n[0]&&n[0].tkg?' @'+r1(n[0].tkg)+' kg':'')+(e.why?' ('+e.why+')':'')}).join('; '));
   else if(s&&s.type==='cardio'&&s.run)L.push('Today\'s session: '+s.title+' · '+s.run.mins+' min'+(s.run.info?' · '+s.run.info:''));
   else L.push('Today\'s session: '+(s?s.title:'rest'));
   const st=(logs[iso(t)]||{}).status;if(st&&st!=='open')L.push('Today\'s status: '+st);
@@ -5899,7 +5906,10 @@ function odyTools(msg){const add=(lines,undo)=>{msg.changes=(msg.changes||[]).co
    inputSchema:{type:'object',properties:{exercise:{type:'string'},weeks:{type:'number'}},required:['exercise']},
    async execute(a){const n=akName(a.exercise),wk=Math.max(1,Math.min(12,+a.weeks||8)),cut=iso(addDays(today,-7*wk)),out=[];
      Object.keys(logs).sort().reverse().forEach(k=>{if(k<cut)return;const l=logs[k];(l.exercises||[]).forEach(e=>{if(e.name!==n)return;const d=akW(e).filter(z=>z.done);if(d.length)out.push(k+': '+d.map(z=>akSet(n,z)).join(', '))})});
-     return{exercise:n,sessions:out.slice(0,40)}}},
+     const SW=odySw(),rep=[];Object.keys(SW).sort().reverse().forEach(k=>{if(k<cut)return;SW[k].filter(q=>q.from===n&&q.n).forEach(q=>rep.push(k+': '+q.to+' ('+q.sets.map(z=>akSet(q.to,z)).join(', ')+')'))});
+     const o={exercise:n,sessions:out.slice(0,40)};
+     if(rep.length){o.replaced_on=rep;o.note='On the replaced_on dates she did not do '+n+': she swapped it for the exercise shown. Do not read that as a drop or a missed lift; say it was a swap and compare the replacement with its own history.'}
+     return o}},
   {name:'sessions',description:'Her sessions between two dates (YYYY-MM-DD, at most 8 weeks): what she did, status, length, sets, runs and her notes.',
    inputSchema:{type:'object',properties:{from:{type:'string'},to:{type:'string'}},required:['from']},
    async execute(a){const f=String(a.from||''),t=String(a.to||odyK());if(!/^\d{4}-\d\d-\d\d$/.test(f)||!/^\d{4}-\d\d-\d\d$/.test(t))throw new Error('Dates must be YYYY-MM-DD.');if(dayDiff(parse(t),parse(f))>56)throw new Error('At most 8 weeks at a time.');
