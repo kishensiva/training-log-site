@@ -2726,6 +2726,7 @@ html,button,a,label,input,summary,[role=button],[role=tab]{-webkit-tap-highlight
 @keyframes akhi{from{opacity:0;transform:translateY(8px) scale(.96)}}
 @media (prefers-reduced-motion:reduce){.ak-hi{animation:none}}
 body[data-view]:not([data-view="today"]) .ak-hi,body:has(#ody:not([hidden])) .ak-hi{display:none}
+.ak-hi{display:none!important}   /* 29 Nov: the hint pointed at the floating pill, which moved into the bottom bar */
 .ody-fab{position:fixed;z-index:9;right:max(16px,calc((100vw - 560px)/2 + 16px));bottom:calc(74px + env(safe-area-inset-bottom,0px));height:52px;min-height:52px;padding:0 18px 0 13px;border-radius:999px;border:0;display:flex;align-items:center;gap:0;font:650 14px var(--body);color:#fff;background:linear-gradient(180deg,rgba(40,48,66,.98),rgba(20,25,36,.98));box-shadow:0 10px 30px -8px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12),0 0 0 1px rgba(255,255,255,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:opacity .18s ease-out,transform .18s ease-out,padding .2s ease-out}
 .ody-fab[hidden]{display:none}
 /* 28 Nov 2026: Ody gets a fixed home in the bottom bar (no floating pill); Stats tab replaces XP and badges */
@@ -6069,6 +6070,98 @@ function akOrb(){if(!odyOn||!(cur&&mode==='live'&&cur.status==='in_progress'))re
   const was=JSON.stringify(AKT),now=JSON.stringify(m);Object.keys(AKT).forEach(k=>delete AKT[k]);Object.assign(AKT,m);if(was!==now)akRefresh()},()=>{})}catch(e){}})();
 (async()=>{try{const s=await claude.use('sample');if(!s)return;let lim=null;try{lim=await s.limits()}catch(e){}if(!lim||!lim.tools)return;odySample=s;odyOn=true;odyFab();try{if(cur)renderSession()}catch(e){}}catch(e){}})();
 window.AK={reloadRules:()=>{AK_RULES=null},open:()=>odyOpen(),send:t=>odySend(t),close:()=>odyClose(),state:ODY,ctx:()=>odyCtx(),tools:m=>odyTools(m||{})};
+/* Log from photo (29 Nov 2026, Kishen's request for Eleanor). A button under Start (and in Other options):
+   she snaps or picks a photo of her workout (whiteboard, sheet, screenshot), the AI reads it and fills in her
+   exercises and sets, she checks and edits them, and Save logs the day through the normal finish path
+   (streak, Stats and history update as usual). The photo is shrunk on the phone, read once and not stored.
+   Only her own exercise names are used; anything the AI can't match goes into the day's note instead. */
+(function(){
+  const PL={busy:false,data:null,date:null};
+  const st=document.createElement('style');st.textContent=`
+.plg{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.45)}
+.plg .in{width:100%;max-width:560px;max-height:88vh;overflow:auto;background:var(--card);color:var(--fg);border-radius:22px 22px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+.plg h2{margin:0;font-size:22px}.plg p{margin:0;color:var(--muted);font-size:14px;line-height:1.4}
+.plg .ex{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+.plg .exh{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}
+.plg .exh button{border:0;background:none;color:var(--muted);font-size:20px;min-width:40px;min-height:40px}
+.plg .set{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--muted)}
+.plg .set .sl{min-width:48px}.plg .set input{width:76px;min-height:40px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:600 16px var(--body);padding:0 8px}
+.plg .row{display:flex;gap:10px}.plg .row button{flex:1;min-height:50px;border-radius:999px;font:700 16px var(--body)}
+.plg .spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:plgs 1s linear infinite;align-self:center}
+@keyframes plgs{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.plg .spin{animation:none}}
+.plgb{display:flex;width:100%;min-height:54px;margin:10px 0 0;align-items:center;justify-content:center;gap:10px;border-radius:999px;border:1.5px solid rgba(255,255,255,.75);background:rgba(255,255,255,.14);color:#fff;font:700 17px var(--body);box-shadow:none;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.plgb svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.plgb:active{transform:scale(.98)}`;
+  document.head.appendChild(st);
+  const inp=document.createElement('input');inp.type='file';inp.id='plgFile';inp.accept='image/*';inp.hidden=true;document.body.appendChild(inp);
+
+  function drop(){const o=document.querySelector('.plg');if(o)o.remove()}
+  function close(){drop();PL.data=null;PL.date=null}
+  function sheetHtml(h){drop();const o=document.createElement('div');o.className='plg';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');
+    o.innerHTML='<div class="in">'+h+'</div>';o.addEventListener('click',e=>{if(e.target===o&&!PL.busy)close()});document.body.appendChild(o);return o}
+
+  async function shrink(file){try{const bm=await createImageBitmap(file),k=Math.min(1,1600/Math.max(bm.width,bm.height)),c=document.createElement('canvas');
+      c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);
+      return await new Promise(r=>c.toBlob(b=>r(b||file),'image/jpeg',.82))}catch(e){return file}}
+
+  const UNIT=x=>x.unit==='t'?'time':x.unit==='s'?'seconds':x.unit==='m'?'metres':x.bw?'reps (bodyweight)':'kg × reps';
+  const secs=v=>{v=String(v||'').trim();if(!v)return null;const p=v.split(/[:.]/).map(Number);if(p.some(isNaN))return null;
+    return p.length===3?p[0]*3600+p[1]*60+p[2]:p.length===2?p[0]*60+p[1]:+p[0]};
+  function match(n){n=String(n||'').trim().toLowerCase();return Object.keys(X).find(k=>k.toLowerCase()===n)||null}
+
+  async function read(file){PL.busy=true;sheetHtml('<h2>Reading your photo…</h2><div class="spin" aria-hidden="true"></div><p>This takes a few seconds.</p>');
+    try{const s=await claude.use('sample');if(!s)throw new Error('no-ai');const img=await shrink(file);
+      const cat=Object.keys(X).map(k=>'- '+k+' ('+UNIT(X[k])+')').join('\n');
+      const q='This photo shows a workout Eleanor did (a whiteboard, a sheet, a screenshot or a watch summary). Read it and return ONLY JSON, no other text:\n'+
+        '{"title":"short name for the session","exercises":[{"name":"<exact name from the list>","sets":[{"kg":number|null,"reps":number|null,"secs":number|null,"m":number|null}]}],"other":["anything on the photo that matches no name in the list, as short text"]}\n'+
+        'Use only these exercise names, exactly as written, and pick the closest one when it is clearly the same movement:\n'+cat+'\n'+
+        'Times go in secs (6:30 = 390). Distances in metres go in m. Weights in kg. One entry in sets per set or round. Leave out anything you cannot read; never guess numbers.';
+      const r=await s(q,{images:[img],modelTier:'default'});const t=String((r&&r.text)||'');const j=JSON.parse(t.slice(t.indexOf('{'),t.lastIndexOf('}')+1));
+      const ex=[],other=Array.isArray(j.other)?j.other.map(String).slice(0,10):[];
+      (j.exercises||[]).forEach(e=>{const n=match(e&&e.name);if(!n){if(e&&e.name)other.push(String(e.name));return}
+        const sets=(e.sets||[]).slice(0,12).map(z=>({kg:z.kg!=null?+z.kg:null,reps:z.reps!=null?+z.reps:null,secs:z.secs!=null?+z.secs:null,m:z.m!=null?+z.m:null}));if(sets.length)ex.push({name:n,sets})});
+      if(!ex.length&&!other.length)throw new Error('empty');
+      PL.data={title:String(j.title||'').slice(0,60),ex,other};PL.busy=false;review()}
+    catch(e){PL.busy=false;const m=String(e&&e.message);
+      sheetHtml('<h2>Couldn\'t read that one</h2><p>'+(m==='no-ai'?'Logging from a photo needs the Ody app from your home screen.':'Try a sharper photo with the whole workout in frame, or log it by hand.')+'</p><div class="row"><button type="button" data-plg="again" class="primary">Try another photo</button><button type="button" data-plg="x">Close</button></div>');wire()}}
+
+  function setHtml(x,z,i,k){const lab='Set '+(k+1),L='<span class="sl">'+lab+'</span>';
+    if(x.unit==='t'||x.unit==='s'){const v=z.secs!=null?fmtT(z.secs):'';return'<div class="set">'+L+'<input data-e="'+i+'" data-k="'+k+'" data-f="secs" value="'+esc(v)+'" inputmode="decimal" aria-label="'+lab+' time">'+(x.unit==='t'&&!x.bw?'<input data-e="'+i+'" data-k="'+k+'" data-f="kg" value="'+(z.kg!=null?z.kg:'')+'" inputmode="decimal" aria-label="'+lab+' kg">kg':'')+'</div>'}
+    if(x.unit==='m')return'<div class="set">'+L+'<input data-e="'+i+'" data-k="'+k+'" data-f="m" value="'+(z.m!=null?z.m:'')+'" inputmode="numeric" aria-label="'+lab+' metres">m</div>';
+    return'<div class="set">'+L+(x.bw?'':'<input data-e="'+i+'" data-k="'+k+'" data-f="kg" value="'+(z.kg!=null?z.kg:'')+'" inputmode="decimal" aria-label="'+lab+' kg">kg ×')+'<input data-e="'+i+'" data-k="'+k+'" data-f="reps" value="'+(z.reps!=null?z.reps:'')+'" inputmode="numeric" aria-label="'+lab+' reps">reps</div>'}
+
+  function review(){const d=PL.data,day=parse(PL.date),had=logs[PL.date]&&['done','partial'].includes(logs[PL.date].status);
+    let h='<h2>Check it before saving</h2><p>Fix anything the photo got wrong. Saved to '+DN[day.getDay()]+' '+short(day)+(had?'. This replaces what is already logged that day.':'.')+'</p>';
+    d.ex.forEach((e,i)=>{const x=X[e.name]||{};h+='<div class="ex"><div class="exh"><span>'+esc(e.name)+'</span><button type="button" data-plg="del" data-e="'+i+'" aria-label="Remove '+esc(e.name)+'">×</button></div>'+e.sets.map((z,k)=>setHtml(x,z,i,k)).join('')+'</div>'});
+    if(d.other.length)h+='<div class="ex"><div class="exh"><span>Also on the photo</span></div><p>'+d.other.map(esc).join(' · ')+'</p><p>Saved as a note on the day.</p></div>';
+    h+='<div class="row"><button type="button" data-plg="x">Cancel</button><button type="button" class="primary" data-plg="save"'+(d.ex.length?'':' disabled')+'>Save workout</button></div>';
+    sheetHtml(h);wire()}
+
+  function readInputs(){document.querySelectorAll('.plg input[data-e]').forEach(n=>{const e=PL.data.ex[+n.dataset.e];if(!e)return;const z=e.sets[+n.dataset.k],f=n.dataset.f,v=n.value.trim();
+    z[f]=f==='secs'?secs(v):v===''?null:+v.replace(',','.')})}
+
+  async function save(){if(!PL.data)return;readInputs();const d=PL.data;
+    sel=parse(PL.date);loadSession();if(!cur||cur.practice){close();return}
+    const ex=d.ex.map(e=>{const x=X[e.name]||{};const sets=e.sets.map(z=>{const reps=x.unit==='t'||x.unit==='s'?z.secs:x.unit==='m'?z.m:z.reps,kg=x.bw?0:(+z.kg||0);
+        return reps>0?{t:'N',kg,reps:+reps,tkg:kg,treps:+reps,done:true}:null}).filter(Boolean);return sets.length?{name:e.name,slug:slug(e.name),sets,fromPhoto:true}:null}).filter(Boolean);
+    if(!ex.length){toast('Add at least one set with a number first.');return}
+    cur.type='lift';cur.exercises=ex;cur.fromPhoto=true;if(d.title)cur.title=d.title;
+    if(d.other.length)cur.note=((cur.note?cur.note+' · ':'')+'From photo: '+d.other.join(', ')).slice(0,400);
+    close();try{await finishSave('done',true)}catch(e){toast('Couldn\'t save that. Try again.')}}
+
+  function wire(){const o=document.querySelector('.plg');if(!o)return;o.onclick=e=>{if(e.target===o&&!PL.busy){close();return}const b=e.target.closest('[data-plg]');if(!b)return;const a=b.dataset.plg;
+    if(a==='x')close();else if(a==='again'){close();pick()}else if(a==='del'){readInputs();PL.data.ex.splice(+b.dataset.e,1);review()}else if(a==='save')save()}}
+
+  function pick(){if(PL.busy)return;PL.date=iso(sel);inp.value='';inp.click()}
+  inp.onchange=()=>{const f=inp.files&&inp.files[0];if(!PL.date)PL.date=iso(sel);if(f)read(f)};
+  window.photoLogOpen=pick;
+
+  /* the button: under Start, next to Other options, on days that can still be logged (today and past days, not mid-workout) */
+  function place(){try{const u=document.querySelector('#session .uxunder');if(!u||document.querySelector('#session .plgb'))return;if(mode==='live'||mode==='feedback'||dayDiff(sel,today)>0)return;
+      const b=document.createElement('button');b.type='button';b.className='plgb';b.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Log from photo';b.onclick=pick;u.insertAdjacentElement('beforebegin',b)}catch(e){}}
+  try{const _rs=renderSession;renderSession=function(){const r=_rs.apply(this,arguments);try{setTimeout(place,0)}catch(e){}return r}}catch(e){}
+  setTimeout(place,500);
+})();
 }catch(e){console.error(e)}
 ;
 try{
@@ -6170,6 +6263,7 @@ try{
     if(ex)h+='<button type="button" class="uxrow" data-uxo="express"><span class="ic" aria-hidden="true">⚡</span><span class="tx">'+esc(ex.textContent.replace(/^Tired\?\s*/,''))+'<small>Short on time or energy. Streak stays safe</small></span></button>';
     h+='<button type="button" class="uxrow" data-uxo="feel"><span class="ic" aria-hidden="true">☺</span><span class="tx">'+(feelNow()?'Change how you feel':'How do you feel?')+'</span></button>';
     if($q('#session .hero #quickW')||$q('#session .hero #logR'))h+='<button type="button" class="uxrow" data-uxo="log"><span class="ic" aria-hidden="true">✓</span><span class="tx">Already done? Log as planned</span></button>';
+    if(window.photoLogOpen&&mode!=='live'&&dayDiff(sel,today)<=0)h+='<button type="button" class="uxrow" data-uxo="photo"><span class="ic" aria-hidden="true">📷</span><span class="tx">Log from photo<small>Snap your workout, check it, save</small></span></button>';
     if($q('#session .hero #skipW')||$q('#session .hero #skipR0'))h+='<button type="button" class="uxrow" data-uxo="skip"><span class="ic" aria-hidden="true">⏭</span><span class="tx">Skip today</span></button>';
     h+='</div>';
     if(lift&&$q('#session [data-logmode]'))h+='<p class="uxlab">Log your sets</p><div class="uxseg"><button type="button" data-uxm="list" aria-pressed="'+!gymOn+'">Normal · all at once</button><button type="button" data-uxm="gym" aria-pressed="'+gymOn+'">Gym · one at a time</button></div>';
@@ -6177,6 +6271,7 @@ try{
   OP.addEventListener('click',e=>{const o=e.target.closest('[data-uxo]');
     if(o){const a=o.dataset.uxo;sheet(OP,false);
       if(a==='feel'){setTimeout(openCI,240);return}
+      if(a==='photo'){setTimeout(()=>window.photoLogOpen&&photoLogOpen(),240);return}
       const pick=s=>{const b=$q('#session .hero '+s);if(b)b.click();return!!b};
       if(a==='express'){pick('#expressW')||pick('#expressR');return}
       if(a==='full'){pick('.kfullb');return}
