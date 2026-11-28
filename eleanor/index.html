@@ -5514,7 +5514,7 @@ loadSession();renderAll(true);loop();setTimeout(()=>navInd(true),50);
   let first=true;
   db.collection('log').orderBy('date','desc').limit(500).onSnapshot(s=>{
     const keep=cur&&(mode==='live'||mode==='feedback')?cur.date:null,mine=keep?logs[keep]:null;
-    logs={};s.docs.forEach(d=>{const v=d.data();if(v&&v.date)logs[v.date]=v});try{regDefs()}catch(e){}if(mine)logs[keep]=mine;
+    logs={};s.docs.forEach(d=>{const v=d.data();if(v&&v.date)logs[v.date]=window.logUp?logUp(v):v});try{regDefs()}catch(e){}if(mine)logs[keep]=mine;
     if(first){setTimeout(autoClose,300)}
     if(first||mode==='preview'||mode==='summary'){first=false;if(mode!=='live'&&mode!=='feedback')loadSession();renderAll(mode!=='live'&&mode!=='feedback')}else renderAll(false)},()=>{});
   db.doc('coach/today').onSnapshot(s=>{coach=s.exists?s.data():null;if(mode==='preview'){loadSession();renderSession()}},()=>{});
@@ -6519,13 +6519,36 @@ const APP_NAME='eleanor',APP_VER='e39';
       collection (one doc per day, at most 20 entries, the same message only once a day). No personal data:
       only the error text, where in the code, the app version and which screen was open. A daily check reads it.
    2. Data version labels: every saved day record carries schema:1, so a future update can tell old records
-      from new ones and read both correctly. Records without it are schema 1 (today's shape). */
+      from new ones and read both correctly. Records without it are schema 1 (today's shape).
+   3. Reading side (28 Nov 2026, to-do item 11): every day record goes through logUp() when it is loaded.
+      - Older records are upgraded step by step with MIG[n] (n -> n+1), so a future change of shape only needs
+        one new MIG entry and every old day still reads correctly. The saved copy is upgraded the next time
+        that day is saved; nothing is rewritten in bulk.
+      - A record from a NEWER version of the app (schema above SCHEMA) means this copy of the app is out of date
+        (e.g. a phone that hasn't refreshed yet). It is shown as it is, but never saved over, and a notice asks
+        to reopen the app. So an old copy can't wipe fields it doesn't know about. */
 (function(){
   const APP=(typeof APP_NAME==='string'&&APP_NAME)||'app',VER=(typeof APP_VER==='string'&&APP_VER)||'';
   const SCHEMA=1;window.LOG_SCHEMA=SCHEMA;
+  /* 3. reading side. MIG[n] upgrades a schema-n record to n+1 and returns it. Add the next one here when SCHEMA goes up. */
+  const MIG={};window.LOG_MIG=MIG;
+  const NEWER=new Set();window.LOG_NEWER=NEWER;let told=false;
+  function tell(){if(told)return;told=true;setTimeout(()=>{try{toast('Ody has an update. Close the app and open it again to load it.')}catch(e){}},600)}
+  window.logUp=function(v){try{if(!v||typeof v!=='object')return v;const s=+v.schema||1;
+      if(s>SCHEMA){if(v.date)NEWER.add(v.date);tell();return v}
+      if(v.date)NEWER.delete(v.date);
+      let o=v;for(let n=s;n<SCHEMA;n++){if(typeof MIG[n]!=='function')break;o=MIG[n](Object.assign({},o))||o;o.schema=n+1}
+      return o}catch(e){return v}};
+  /* the guard sits on the database itself, so it covers every write to a day (saves, moves, coach and Ody tools) */
+  function guardDb(){try{if(typeof db==='undefined'||!db||db.__lg)return !!(typeof db!=='undefined'&&db&&db.__lg);const d0=db.doc.bind(db);
+      db.doc=function(path){const r=d0(path),m=/^log\/(\d{4}-\d\d-\d\d)$/.exec(String(path||''));if(!m||!r)return r;
+        ['set','update'].forEach(f=>{if(typeof r[f]!=='function')return;const o=r[f].bind(r);r[f]=function(){if(NEWER.has(m[1])){tell();return Promise.resolve()}return o.apply(r,arguments)}});return r};
+      db.__lg=true;return true}catch(e){return false}}
+  if(!guardDb()){const iv=setInterval(()=>{if(guardDb())clearInterval(iv)},500)}   /* the web app connects only after sign-in, which can take any time */
   /* 2. stamp the schema on every day record the app saves */
   /* set on the open day itself (not on the saved copy), so the safe-saves check sees exactly what was written */
-  try{if(typeof persist==='function'){const _p=persist;persist=function(){try{if(cur&&!cur.practice&&cur.schema==null)cur.schema=SCHEMA}catch(e){}return _p.apply(this,arguments)}}}catch(e){}
+  try{if(typeof persist==='function'){const _p=persist;persist=function(){try{if(cur&&NEWER.has(cur.date)){tell();return Promise.resolve()}   /* never save over a newer record */
+      if(cur&&!cur.practice&&cur.schema==null)cur.schema=SCHEMA}catch(e){}return _p.apply(this,arguments)}}}catch(e){}
   /* 1. crash records */
   const q=[],seen=new Set();let n=0,busy=false;
   const day=()=>{try{return iso(new Date())}catch(e){return new Date().toISOString().slice(0,10)}};
