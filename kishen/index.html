@@ -3025,7 +3025,7 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
  <symbol id="ph-pl" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="currentColor"/><circle cx="16" cy="16" r="15" fill="url(#ph-sheen)"/><circle cx="16" cy="16" r="12.2" fill="none" stroke="rgba(0,0,0,.22)" stroke-width="1"/><circle cx="16" cy="16" r="9" fill="none" stroke="rgba(255,255,255,.28)" stroke-width=".8"/><circle cx="16" cy="16" r="5.2" fill="url(#ph-hub)"/><circle cx="16" cy="16" r="2" fill="#2b313c"/></symbol>
 </defs></svg>
 
-<button type="button" class="ody-fab" id="odyFab" hidden aria-haspopup="dialog" aria-controls="ody"><span class="ody-orb" aria-hidden="true"></span><span class="ody-l">Ask Odysseus</span></button>
+<button type="button" class="ody-fab" id="odyFab" hidden aria-haspopup="dialog" aria-controls="ody"><span class="ody-orb" aria-hidden="true"></span><span class="ody-l">Ask Ody</span></button>
 <div class="ody" id="ody" hidden>
   <div class="ody-dim" data-odyx="1"></div>
   <div class="ody-sh" role="dialog" aria-modal="true" aria-labelledby="odyT">
@@ -5513,7 +5513,7 @@ function preFatHtml(e,ei){const started=e.sets.some(z=>z.t!=='W'&&z.done);if(sta
 const pubmed=q=>'https://pubmed.ncbi.nlm.nih.gov/?term='+encodeURIComponent(q||'');
 document.addEventListener('click',e=>{const b=e.target.closest('[data-ev]');if(!b)return;e.preventDefault();e.stopPropagation();openEvSheet(b.dataset.ev)},true);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){const o=$('evsheet');if(o){if(o._close)o._close();else o.remove()}}});
-fetch('evidence.json').then(r=>r.ok?r.json():null).then(j=>{if(j&&j.topics){const ch=!EVD||JSON.stringify(EVD)!==JSON.stringify(j);EVD=j;try{localStorage.setItem('evdCache',JSON.stringify(j))}catch(e){}if(ch){try{if(view==='ev')renderEv()}catch(e){}try{if(cur)renderSession()}catch(e){}try{renderInsights()}catch(e){}try{if(view==='prog')renderProgress()}catch(e){}}}}).catch(()=>{});
+fetch('evidence.json').then(r=>r.ok?r.json():null).then(j=>{if(j&&j.topics){const ch=!EVD||JSON.stringify(EVD)!==JSON.stringify(j);EVD=j;try{localStorage.setItem('evdCache',JSON.stringify(j))}catch(e){}if(ch){try{if(view==='ev')renderEv()}catch(e){}try{if(cur)renderSession()}catch(e){}try{renderInsights()}catch(e){}try{renderProposals()}catch(e){}try{if(view==='prog')renderProgress()}catch(e){}}}}).catch(()=>{});
 
 /* ---------- coach's watchlist: coach/insights is written by the 5am coach from his daily and past data ---------- */
 let insights=null;
@@ -6253,7 +6253,7 @@ function odyRender(force){const el=$('odyMsgs');if(!el)return;const cm=!!ODY.com
     return h+'</div>'});
   /* compose layout: newest exchange first, right under the text box */
   let body=H.join('');if(cm){const G=[];ODY.msgs.forEach((m,i)=>{if(m.role==='user'||!G.length)G.push([]);G[G.length-1].push(H[i])});body=G.reverse().map(g=>'<div class="ody-ex">'+g.join('')+'</div>').join('')}
-  el.innerHTML=(ODY.msgs.length?'':'<p class="ody-empty">Ask Odysseus anything: "how\'s my hack squat going?", "has my HRV dropped this month?", "protein for today?", or change things: "drop the weights 10%", "move Lower A to Thursday". Bigger plan changes go to your coach.</p>')+body;
+  el.innerHTML=(ODY.msgs.length?'':'<p class="ody-empty">Ask Ody anything: "how\'s my hack squat going?", "has my HRV dropped this month?", "protein for today?", or change things: "drop the weights 10%", "move Lower A to Thursday". Bigger plan changes go to your coach.</p>')+body;
   if(atEnd)el.scrollTop=cm?0:el.scrollHeight}
 function odyCompose(on){const o=$('ody');on=!!on&&!!o&&!o.hidden&&!ODY.kbOK&&odyCoarse();if(!!ODY.compose===on)return;ODY.compose=on;if(o)o.classList.toggle('compose',on);odyRender(true);odyGrow()}
 function odyMaybeExit(){if(document.activeElement!==$('odyIn'))odyCompose(false)}
@@ -6407,13 +6407,13 @@ try{
         }catch(err){cur.exercises=snap;cur.focus=focus0;renderSession();throw new Error('Couldn\'t make that change, nothing was changed.')}
         cur.focus=null;cur.focusEdit=false;if(typeof swapOpen!=='undefined')swapOpen=-1;persist();renderSession();
         const sig=doneSig(),sum=lines.map(l=>l[1]).join('; ');try{odyTell('during the workout: '+sum+' ('+cur.title+')',cur.date,[{op:'live'}])}catch(e){}
-        add(lines,async()=>{if(!live())throw new Error('The workout has ended.');if(doneSig()!==sig){toast('You\'ve ticked sets since then. Ask Odysseus to change it back.');throw new Error('ticked since')}
+        add(lines,async()=>{if(!live())throw new Error('The workout has ended.');if(doneSig()!==sig){toast('You\'ve ticked sets since then. Ask Ody to change it back.');throw new Error('ticked since')}
           cur.exercises=snap;cur.focus=focus0;persist();renderSession();try{odyTell('during the workout, undid: '+sum,cur.date,[])}catch(e){}});
         return{applied:true,changes:lines.map(l=>l[1])}}});
     return T};
   /* 3. the orb in the workout screen, and no floating pill on top of it */
   function orb(){if(!live()||!odyOn)return;const lb=document.querySelector('#session .livebar'),gt=document.querySelector('#session #gym .gtop');
-    const mk=()=>{const b=document.createElement('button');b.type='button';b.className='ody-lv';b.setAttribute('aria-label','Ask Odysseus');b.innerHTML='<span class="ody-orb" aria-hidden="true"></span>';b.onclick=e=>{e.stopPropagation();odyOpen()};return b};
+    const mk=()=>{const b=document.createElement('button');b.type='button';b.className='ody-lv';b.setAttribute('aria-label','Ask Ody');b.innerHTML='<span class="ody-orb" aria-hidden="true"></span>';b.onclick=e=>{e.stopPropagation();odyOpen()};return b};
     if(lb&&!lb.querySelector('.ody-lv')){const f=lb.querySelector('#finW');if(f)lb.insertBefore(mk(),f)}
     if(gt&&!gt.querySelector('.ody-lv')){const c=gt.querySelector('.gc');if(c)gt.insertBefore(mk(),c)}}
   const rs=renderSession;renderSession=function(){const r=rs.apply(this,arguments);try{orb()}catch(e){}return r};
