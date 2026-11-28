@@ -2759,6 +2759,36 @@ html,button,a,label,input,summary,[role=button],[role=tab]{-webkit-tap-highlight
 @media (prefers-reduced-motion:reduce){.ptabs::before,.tick input[type=checkbox],.ins.kf .ih::after{transition:none}}
 .ody-fab{position:fixed;z-index:9;right:max(16px,calc((100vw - 560px)/2 + 16px));bottom:calc(74px + env(safe-area-inset-bottom,0px));height:52px;min-height:52px;padding:0 18px 0 13px;border-radius:999px;border:0;display:flex;align-items:center;gap:0;font:650 14px var(--body);color:#fff;background:linear-gradient(180deg,rgba(40,48,66,.98),rgba(20,25,36,.98));box-shadow:0 10px 30px -8px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12),0 0 0 1px rgba(255,255,255,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:opacity .18s ease-out,transform .18s ease-out,padding .2s ease-out}
 .ody-fab[hidden]{display:none}
+/* 28 Nov 2026: Ody gets a fixed home in the bottom bar (no floating pill); Stats tab replaces XP and badges */
+.ody-fab{display:none!important}
+.nav .in{grid-template-columns:repeat(5,1fr)!important}
+.nav button{font-size:11.5px;min-width:0;white-space:nowrap}
+.nav button.ody-tab{color:var(--fg);font-weight:650}
+.ody-tab .orbw{width:28px;height:28px;margin-bottom:-2px;display:grid;place-items:center}
+.ody-tab .ody-orb{width:24px;height:24px}
+.st-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;border-radius:999px;background:var(--kcard,var(--card))}
+.st-seg button{min-height:40px;border:0;border-radius:999px;background:none;color:var(--muted);font:600 14px var(--body)}
+.st-seg button[aria-selected="true"]{background:var(--fg);color:var(--bg)}
+.st-hero{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.st-big{background:var(--kcard,var(--card));border-radius:16px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.st-big b{font:800 30px/1.05 var(--display);color:var(--fg);white-space:nowrap}
+.st-big b i{font-style:normal;font-size:15px;font-weight:700;color:var(--muted);margin-left:3px;font-family:var(--body)}
+.st-big>span{font:500 13px var(--body);color:var(--muted)}
+.st-big em,.st-big em.up{font-style:normal;font:600 12px var(--body);color:var(--muted);margin-top:4px}
+.st-big em.up{color:var(--done)}
+.st-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline;padding:9px 0;border-top:1px solid var(--line);font:500 15px var(--body)}
+.card h2+.st-row{border-top:0}
+.st-row b{font:700 15px var(--body);text-align:right}
+.st-note{font:500 12px var(--body);color:var(--muted);margin:2px 0 0}
+.st-ms{display:flex;flex-direction:column;gap:6px;padding:9px 0;border-top:1px solid var(--line)}
+.card h2+.st-ms{border-top:0}
+.st-ms>div:first-child{display:flex;justify-content:space-between;gap:10px;font:600 15px var(--body)}
+.st-ms small{color:var(--muted);font-size:13px;font-weight:500;white-space:nowrap}
+.st-bar{height:8px;border-radius:9px;background:var(--line);overflow:hidden}
+.st-bar i{display:block;height:100%;border-radius:9px;background:var(--accent)}
+.st-kt b{display:flex!important;align-items:baseline;gap:3px;white-space:nowrap}
+.st-kt b i{font-style:normal!important;font-size:.62em;color:var(--muted)!important}
+.st-kt .st-up{color:var(--done)}
 .ody-l{margin-left:9px;max-width:140px;overflow:hidden;white-space:nowrap;transition:max-width .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out}
 .ody-fab.tuck{padding:0 13px}
 .ody-fab.tuck .ody-l{max-width:0;margin-left:0;opacity:0}
@@ -2890,7 +2920,7 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
     <section class="card" id="ready">
       <div class="head"><h2>How do you feel?</h2><span class="badge open" id="vbadge">Optional</span></div>
       <div class="feelsum" id="feelsum" hidden><span>Feeling <b id="feelword"></b></span><button type="button" id="feelChange">Change</button></div>
-      <button type="button" class="gnudge" id="gnudge" hidden><span class="gw" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="3.5"/><path d="M9 6l.6-3h4.8l.6 3M9 18l.6 3h4.8l.6-3M12 9.5V12l1.6 1"/></svg></span><span class="gtx"><b>Add Garmin numbers</b><small>Readiness · HRV · resting HR</small></span><span class="gxp">+10 XP</span></button>
+      <button type="button" class="gnudge" id="gnudge" hidden><span class="gw" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="3.5"/><path d="M9 6l.6-3h4.8l.6 3M9 18l.6 3h4.8l.6-3M12 9.5V12l1.6 1"/></svg></span><span class="gtx"><b>Add Garmin numbers</b><small>Readiness · HRV · resting HR</small></span></button>
       <div class="quick" id="q-quick"></div>
       <div class="q"><span>From your Garmin this morning</span>
         <div class="gnum">
@@ -2993,23 +3023,14 @@ body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{displa
   </div>
   <div id="view-review" hidden style="display:flex;flex-direction:column;gap:12px"></div>
   <div id="view-ev" hidden style="display:flex;flex-direction:column;gap:12px"></div>
-  <div id="view-badges" hidden style="display:flex;flex-direction:column;gap:12px">
-    <section class="card" id="lvlcard"></section>
-    <section class="card" hidden><h2>Level rewards</h2><p class="msg" style="margin:0">Pick a treat for each level. It unlocks the moment you level up, and your coach reminds you to claim it.</p>
-      <form id="rwform" class="rwgrid"></form><p class="msg" id="rwmsg" role="status"></p></section>
-    <section class="card"><h2>Badges</h2><div class="bgrid" id="bgrid"></div></section>
-    <section class="card"><h2>How you earn XP</h2><ul class="rules">
-      <li><span>Finish a workout</span><b>+50 XP</b></li><li><span>Finish a run</span><b>+40 XP</b></li><li><span>Express session</span><b>+30 XP</b></li>
-      <li><span>Recovery day done properly</span><b>+20 XP</b></li><li><span id="rule-ontime">Start on time (by 7:15, or 9:15 on a day off)</span><b>+15 XP</b></li><li><span>Log it the same day</span><b>+10 XP</b></li>
-      <li><span>Morning check-in or Garmin numbers</span><b>+10 XP</b></li><li><span>Personal record</span><b>+25 XP</b></li><li><span>Beat your ghost on a lift</span><b>+5 XP each</b></li>
-      <li><span>All 3 must-dos in a week</span><b>+75 XP + 1 freeze</b></li><li><span id="rule-perfect">5 of 5 workouts in a week</span><b>+50 XP</b></li></ul>
-      <p class="msg">A streak freeze covers one missed training day, so one bad morning never wipes your streak. You can hold two.</p></section>
-  </div>
+  <div id="view-badges" hidden style="display:flex;flex-direction:column;gap:12px"></div>
 </div>
 <nav class="nav" id="nav" aria-label="Sections"><div class="in">
   <button id="tab-today" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Today</button>
   <button id="tab-prog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Progress</button>
-  <button id="tab-badges"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="15" r="6"/><path d="M8.5 10 6 3h4l2 4 2-4h4l-2.5 7"/></svg>Badges</button>
+  <button type="button" id="tab-ody" class="ody-tab" aria-label="Ask Ody" aria-haspopup="dialog"><span class="orbw"><span class="ody-orb" aria-hidden="true"></span></span>Ody</button>
+  <button type="button" id="tab-cal" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>Calendar</button>
+  <button id="tab-badges"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20v-6M9 20V9M14 20v-8M19 20V5"/></svg>Stats</button>
 </div></nav>
 
 <div class="restbar" id="restbar" role="timer" aria-label="Rest timer" hidden>
@@ -3081,6 +3102,7 @@ const REST_EXTRAS=true,PRACTICE_FROM=0,prePlanHtml=()=>{const sun=buildSession(S
 const startRule=(k,hh)=>hh>=12?'pm':noTarget(k)?null:hh<(dayOff(k)?9.25:7.25);
 /* coach insights: who wrote them */
 const INS_BY='your morning coach';
+const ST_GOAL={km:21.1,label:'Half-marathon long run'};   /* Stats tab milestone, his 2027 half */
 /* ---------- end of per-person settings ---------- */
 /* Shared by both apps (plan step 3d, 18 Nov 2026). Functions here were byte-identical in Kishen's and Eleanor's app.
    Change one here and both apps get it: run tools/build.py, then the gate for BOTH apps. */
@@ -3544,7 +3566,7 @@ function chartTip(svg,k){const w=svg.parentElement,tip=w&&w.querySelector('.ctip
 function chartNear(svg,cx){let T;try{T=JSON.parse(svg.dataset.tips||'[]')}catch(e){return null}if(!T.length)return null;const r=svg.getBoundingClientRect(),vx=(cx-r.left)/r.width*(+svg.dataset.w);let b=0;T.forEach((p,i)=>{if(Math.abs(p.x-vx)<Math.abs(T[b].x-vx))b=i});return b}
 function ghostHtml(g,dark){if(!g)return'';const ic=r=>r>0?'<b class="gw">WIN</b>':r<0?'<b class="gl">GHOST</b>':'<b class="gt">TIE</b>';
   return'<div class="ghr'+(dark?' dk':'')+'"><div class="gh"><span>Ghost race · vs '+short(parse(g.date))+'</span><b class="num">'+g.w+' – '+g.l+'</b></div>'+g.rows.map(r=>'<div class="gr"><span>'+esc(r.name)+'</span><span class="num">'+esc(r.you)+'</span><span class="num gg">'+esc(r.ghost)+'</span>'+ic(r.r)+'</div>').join('')+
-    '<p>'+(g.w>g.l?'You beat your ghost. +'+(g.w*5)+' XP.':g.w===g.l?'Dead heat with your ghost'+(g.w?'. +'+(g.w*5)+' XP.':'.'):'The ghost wins this one'+(g.w?', but +'+(g.w*5)+' XP for the lifts you took.':'. Your coach targets those lifts next time.'))+'</p></div>'}
+    '<p>'+(g.w>g.l?'You beat your ghost.':g.w===g.l?'Dead heat with your ghost.':'The ghost wins this one. Your coach targets those lifts next time.')+'</p></div>'}
 function savePB(){try{localStorage.setItem('plateBase',JSON.stringify(PB))}catch(e){}try{if(db)db.doc('settings/plates').set({base:PB,updatedAt:new Date().toISOString()}).catch(()=>{})}catch(e){}}
 function plateSplit(total,base){let side=(total-base)/2;if(!(side>0.01))return null;const out=[];PL_KG.forEach(p=>{while(side>=p-1e-6){out.push(p);side-=p}});return{out,left:Math.round(side*2*100)/100}}
 function platesInner(e,ei){const base=PB[e.name]||0,bl='<button class="linkb" data-a="pbase" data-e="'+ei+'">'+(base?'bar/sled '+base+' kg':'plates only')+'</button>';
@@ -3676,6 +3698,51 @@ function renderWeight(){const el=$('c-wt');if(!el)return;
   el.innerHTML='<div class="big"><b class="num">'+l.kg+' kg</b><span>'+(l.approx?'about ':'')+vo2Label(l.date)+(wts.length>1?' · '+(diff===0?'same as ':(diff>=0?'+':'')+diff+' kg since ')+vo2Label(f.date):'')+(avg!=null&&wk.length>1?' · 7-day avg '+avg:'')+'</span></div>'+
     (wts.length>1?lineChart(wts.map(w=>({x:vo2Label(w.date),d:w.date,y:w.kg})),{label:'Body weight',span:2,unit:' kg'})+wtTrend():'<p class="msg" style="margin:0">Your goal is more leg and calf muscle, so a slow climb of 0.25–0.5 kg a month with rising strength is the good kind of gain.</p>')}
 function rewardFor(lv){return rewards&&rewards.levels&&rewards.levels[lv]?String(rewards.levels[lv]):''}
+/* ---------- Stats tab (28 Nov 2026, Kishen's call, both apps): real numbers instead of XP, levels and badges.
+   Everything is worked out from the saved days (logs), so all past training counts. Distance only counts when it was recorded. ---------- */
+let STR='week';
+const ST_RUNM=m=>m==='run'||m==='treadmill',ST_MACH=m=>m==='bike'||m==='row';
+function stMins(l){if(!l)return 0;if(l.type==='cardio'||l.run){const m=+((l.run||{}).done||{}).mins;if(m>0&&m<600)return m}
+  if(+l.durationMin>0&&+l.durationMin<300)return +l.durationMin;
+  if(l.startedAt&&l.finishedAt){const m=(Date.parse(l.finishedAt)-Date.parse(l.startedAt))/6e4;if(m>=5&&m<=240)return Math.round(m)}return 0}
+function stCalc(from,to){const f=iso(from),t=iso(to),o={kg:0,sets:0,reps:0,prs:0,top:null,runKm:0,machKm:0,longRun:0,mins:0,done:0,plan:0,steps:0};
+  Object.keys(logs).forEach(k=>{if(k<f||k>t)return;const l=logs[k];if(!l||!['done','partial','recovery'].includes(l.status))return;
+    if(l.type!=='rest'&&l.status!=='recovery')o.done++;
+    o.mins+=stMins(l);o.kg+=+l.volume||0;o.prs+=(l.prs||[]).length;
+    (l.exercises||[]).forEach(e=>{const x=X[e.name]||{};(e.sets||[]).forEach(s=>{if(!s.done||s.t==='W')return;o.sets++;if(x.unit)return;o.reps+=+s.reps||0;
+      if(!x.bw&&+s.kg>0&&(!o.top||+s.kg>o.top.kg))o.top={kg:+s.kg,name:e.name}})});
+    const d=(l.run||{}).done||{},km=+d.km||0;if(km>0){if(ST_MACH(d.mode))o.machKm+=km;else if(ST_RUNM(d.mode||'run')){o.runKm+=km;o.longRun=Math.max(o.longRun,km)}}});
+  for(let d=new Date(Math.max(from,START));d<=to&&d<=today;d=addDays(d,1)){try{const p=effPlan(d);if(p&&p.type!=='rest'&&!p.optional)o.plan++}catch(e){}}
+  try{if(typeof garDay!=='undefined'&&garDay)Object.keys(garDay).forEach(k=>{if(k>=f&&k<=t&&typeof garDay[k].steps==='number')o.steps+=garDay[k].steps})}catch(e){}
+  o.kg=Math.round(o.kg);o.runKm=Math.round(o.runKm*10)/10;o.machKm=Math.round(o.machKm*10)/10;o.longRun=Math.round(o.longRun*10)/10;return o}
+function stRange(r){const t=today;if(r==='week'){const a=wkStart(t),n=dayDiff(t,a);return{a,b:t,pa:addDays(a,-7),pb:addDays(a,n-7),cmp:'last week'}}
+  if(r==='month'){const a=new Date(t.getFullYear(),t.getMonth(),1),pa=new Date(t.getFullYear(),t.getMonth()-1,1),pe=new Date(t.getFullYear(),t.getMonth(),0),pb=new Date(pa.getFullYear(),pa.getMonth(),Math.min(t.getDate(),pe.getDate()));
+    return{a,b:t,pa,pb,cmp:'last month'}}
+  let a=new Date(START);Object.keys(logs).forEach(k=>{const d=parse(k);if(d<a)a=d});return{a,b:t,pa:null,pb:null,cmp:''}}
+function stKg(kg){return kg>=1000?{n:(kg/1000).toFixed(kg>=100000?0:1),u:'t'}:{n:kg.toLocaleString(),u:'kg'}}
+function stHm(m){const h=Math.floor(m/60),mm=Math.round(m%60);return h?{n:h,u:'h'+(mm?' '+mm+'m':'')}:{n:mm,u:'min'}}
+function stDelta(c,p,fmt){if(p==null||!c)return'';if(!p)return'<em class="up">new</em>';const d=c-p,pc=Math.round(d/p*100);
+  if(Math.abs(pc)<1)return'<em>same as before</em>';return'<em class="'+(d>0?'up':'dn')+'">'+(d>0?'▲ ':'▼ ')+(fmt?fmt(Math.abs(d)):Math.abs(pc)+'%')+'</em>'}
+function stWeekTile(cls){const r=stRange('week'),c=stCalc(r.a,r.b),p=stCalc(r.pa,r.pb),k=stKg(c.kg);
+  const pc=p.kg&&c.kg?Math.round((c.kg-p.kg)/p.kg*100):null;
+  return'<div class="'+(cls||'kt')+' st-kt" aria-label="'+k.n+' '+(k.u==='t'?'tonnes':'kilograms')+' lifted this week"><b><span class="num">'+k.n+'</span><i>'+k.u+'</i></b><small>lifted this week'+(pc!=null&&Math.abs(pc)>=1?'<br><span class="'+(pc>0?'st-up':'st-dn')+'">'+(pc>0?'▲ ':'▼ ')+Math.abs(pc)+'% vs last</span>':'')+'</small></div>'}
+function stNext(v,L){for(const x of L)if(v<x)return x;return L[L.length-1]*2}
+function renderStats(){const el=$('view-badges');if(!el)return;
+  const r=stRange(STR),c=stCalc(r.a,r.b),p=r.pa?stCalc(r.pa,r.pb):null,all=STR==='all'?c:stCalc(stRange('all').a,today);
+  const kg=stKg(c.kg),tm=stHm(c.mins),seg=[['week','Week'],['month','Month'],['all','All time']];
+  const big=(n,u,lab,d)=>'<div class="st-big"><b><span class="num">'+n+'</span>'+(u?'<i>'+u+'</i>':'')+'</b><span>'+lab+'</span>'+(d||'')+'</div>';
+  const row=(a,b)=>'<div class="st-row"><span>'+a+'</span><b class="num">'+b+'</b></div>';
+  let h='<div class="st-seg" role="tablist" aria-label="Period">'+seg.map(([k,t])=>'<button type="button" role="tab" data-str="'+k+'" aria-selected="'+(STR===k)+'">'+t+'</button>').join('')+'</div>';
+  h+='<div class="st-hero">'+big(kg.n,kg.u,'weight lifted',p?stDelta(c.kg,p.kg):'')+big(c.runKm,'km','run',p?stDelta(c.runKm,p.runKm,x=>(Math.round(x*10)/10)+' km'):'')+
+    big(c.done,'',c.done===1?'workout':'workouts',c.plan&&STR!=='all'?'<em>of '+c.plan+' planned</em>':'')+big(tm.n,tm.u,'training time',p?stDelta(c.mins,p.mins,x=>{const q=stHm(x);return q.n+' '+q.u}):'')+'</div>';
+  h+='<section class="card"><h2>Lifting</h2>'+row('Sets done',c.sets.toLocaleString())+row('Reps done',c.reps.toLocaleString())+row('Personal bests',c.prs)+row('Heaviest lift',c.top?esc(c.top.name)+' '+r1(c.top.kg)+' kg':'–')+'</section>';
+  h+='<section class="card"><h2>Cardio</h2>'+row('Running',c.runKm+' km')+row('Bike + rower',c.machKm+' km')+row('Longest run',c.longRun?c.longRun+' km':'–')+(c.steps?row('Steps (Garmin)',c.steps.toLocaleString()):'')+
+    '<p class="st-note">Distance counts when your watch or you recorded it.</p></section>';
+  const ms=[];const tT=all.kg/1000,nT=stNext(tT,[10,25,50,100,250,500,1000,2500]);ms.push([nT+' t lifted, all time',(Math.round(tT*10)/10)+' t',tT/nT]);
+  const nK=stNext(all.runKm,[25,50,100,250,500,1000,2500]);ms.push([nK+' km run, all time',all.runKm+' km',all.runKm/nK]);
+  if(typeof ST_GOAL!=='undefined'&&ST_GOAL)ms.push([ST_GOAL.label,all.longRun+' of '+ST_GOAL.km+' km',all.longRun/ST_GOAL.km]);
+  h+='<section class="card"><h2>Milestones</h2>'+ms.map(([a,b,f])=>'<div class="st-ms"><div><span>'+a+'</span><small class="num">'+b+'</small></div><div class="st-bar"><i style="width:'+Math.max(2,Math.min(100,f*100)).toFixed(1)+'%"></i></div></div>').join('')+'</section>';
+  el.innerHTML=h;el.querySelectorAll('[data-str]').forEach(b=>b.onclick=()=>{STR=b.dataset.str;renderStats()})}
 function renderRewards(){const f=$('rwform');if(!f||f.contains(document.activeElement))return;
   const ph={3:'New running socks',5:'New running shoes',7:'Sports massage',8:'Half-marathon race entry',9:'New Garmin strap'};
   f.innerHTML=[2,3,4,5,6,7,8,9].map(l=>'<label for="rw'+l+'"><small>Level '+l+' · '+LVT[l-1]+'</small><input id="rw'+l+'" maxlength="60" value="'+esc(rewardFor(l))+'" placeholder="'+(ph[l]||'Your treat')+'"></label>').join('')+'<button type="submit" class="primary">Save rewards</button>'}
@@ -3824,7 +3891,7 @@ async function finishSave(status,quick){
   if(status!=='skipped'&&(cur.type==='lift'||cur.type==='cardio')){const wd=winData(status,g0,g1);setTimeout(()=>win(wd),150);return}
   if(cur.practice)toast(TXT.finishSave);
   if(status!=='skipped'&&cur.type!=='rest')setTimeout(()=>burst(40),150);   /* recovery days finish quietly, no plates */
-  if(cur.practice){}else if(g1.xp>g0.xp)toast('+'+(g1.xp-g0.xp)+' XP'+(g1.lv>g0.lv?' · Level '+g1.lv+': '+g1.title+'!':'')+(g1.streak>1?' · streak '+g1.streak:''));
+  if(cur.practice){}else if(g1.streak>g0.streak&&g1.streak>1)toast('Streak '+g1.streak+' days');
 }
 function renderReqs(){const cut=Date.now()-3*864e5;$('reqlist').innerHTML=reqs.filter(r=>{const t=Date.parse(r.createdAt||r.date||'');return !(t<cut)}).slice(0,5).map(r=>'<div class="pl"><div class="l">'+esc(r.text)+(r.reply?'<small>'+esc(r.reply)+'</small>':'')+'</div><span class="badge '+(r.status==='applied'?'done':'open')+'">'+(r.status==='applied'?'Done':TXT.renderReqs)+'</span></div>').join('')}
 function renderEv(){const el=$('view-ev');if(!el)return;
@@ -4053,8 +4120,8 @@ function winData(status,g0,g1){
   const fx=lift&&FIN_EXTRA?finExtra(st,g1,pr):null;
   return{kind:lift?'lift':'run',fx,scene,title,tag,mile,kicker:(cur.title||'').replace(/ · Express$/,'')+(fx?fx.kick:''),stats,prs:(cur.prs||[]).slice(0,3),plates:status==='partial'||ex?2:3,
     rounds:iv,mins:+d.mins||(cur.run&&cur.run.mins)||0,km:+d.km||0,
-    xp:pr?0:Math.max(0,g1.xp-g0.xp),lv:g1.lv,lvTitle:g1.title,levelUp:!pr&&g1.lv>g0.lv,p0,p1,streak:g1.streak,practice:!!pr,
-    plate:g1.lv>=7?'r':g1.lv>=5?'b':g1.lv>=3?'y':'g',ghost:pr?null:ghostOf(logs[cur.date]),story:'',reward:!pr&&g1.lv>g0.lv?rewardFor(g1.lv):'',lvFrom:g0.lv}}
+    xp:0,noXp:true,lv:g1.lv,lvTitle:g1.title,levelUp:false,p0,p1,streak:g1.streak,practice:!!pr,
+    plate:g1.lv>=7?'r':g1.lv>=5?'b':g1.lv>=3?'y':'g',ghost:pr?null:ghostOf(logs[cur.date]),story:'',reward:'',lvFrom:g0.lv}}
 function renderSummary(el){
   const st=setsDone(),hist=summaryPrev(cur);
   const prev=hist?logs[hist]:null,s=streaks();
@@ -4132,7 +4199,7 @@ function startIntervals(n,t0){ensureAudio();const ph=[['Warm-up, easy · Z1–Z2
 async function endDay(){const pl=night.pl,L=nightList(pl),n=L.filter((_,i)=>night.t[i]).length,all=n>=L.length;
   await saveNight();
   night=null;mode='preview';loadSession();renderAll(true);
-  toast(all?'Cool-down done'+(pl.save?' · +10 XP':''):n?n+' of '+L.length+' stretches logged':'Cool-down closed')}
+  toast(all?'Cool-down done':n?n+' of '+L.length+' stretches logged':'Cool-down closed')}
 /* 18 Nov 2026: indexed once per change to the log instead of re-scanning every logged day on each lookup (same results) */
 let HIX={logs:null,n:-1,sig:'',m:null};
 function histIndex(){const ks=Object.keys(logs),sig=ks.length+'|'+ks.reduce((a,k)=>a+((logs[k]&&logs[k].savedAt)||'')+(logs[k]&&logs[k].status||''),'');
@@ -4561,7 +4628,7 @@ function game(){
   const wsun=wkStart(today);let qe=0;
   for(let i=0;i<7;i++){const k=iso(addDays(wsun,i)),l=logs[k];if(l&&l.startedAt&&['done','partial'].includes(l.status)&&onTime(k,l.startedAt))qe++}
   const wc=weekCounts(today),wg=weekGoal(today);
-  const quests=[['Hit all 3 must-dos',wc.key,3,'+75 XP + freeze'],['Finish '+wg+' workouts',wc.done,wg,'+50 XP'],['Start on time, three times',qe,3,'+45 XP']];
+  const quests=[['Hit all 3 must-dos',wc.key,3,'+1 streak freeze'],['Finish '+wg+' workouts',wc.done,wg,''],['Start on time, three times',qe,3,'']];
   return{xp,lv,title:TITLES[Math.min(lv,TITLES.length)-1],next:T(lv+1),floor:T(lv),streak:run,best,freezes:fr,workouts,badges,quests,ghosts};
 }
 function renderGame(){
@@ -4571,11 +4638,9 @@ function renderGame(){
   const pl=g.lv>=7?'r':g.lv>=5?'b':g.lv>=3?'y':'g',toNext=(g.next-g.xp).toLocaleString()+' XP to level '+(g.lv+1);
   $('xpc').innerHTML='<div class="lvl num" data-plate="'+pl+'" aria-label="Level '+g.lv+'">'+g.lv+'</div><div class="xpm"><div class="xpt"><b>'+g.title+'</b><span class="num">'+toNext+'</span></div><div class="xpbar"><i style="width:'+pct+'%"></i></div></div><div class="flame" aria-label="Streak '+g.streak+'">'+FL+'<span class="num">'+g.streak+'</span></div><div class="frz" aria-label="'+g.freezes+' streak freezes">'+SN+'<span class="num">'+g.freezes+'</span></div>';
   $('quests').innerHTML='<div class="head"><h2>This week\'s quests</h2><span class="rw">'+g.freezes+' freeze'+(g.freezes===1?'':'s')+' banked</span></div>'+g.quests.map(([t,v,n,r])=>'<div class="quest'+(v>=n?' done':'')+'"><span>'+t+'</span><span class="rw">'+(v>=n?'Done · ':'')+r+'</span><div class="qbar"><i style="width:'+Math.min(100,v/n*100)+'%"></i></div><small class="num" style="color:var(--muted);font-size:12px">'+Math.min(v,n)+' of '+n+'</small></div>').join('');
-  $('lvlcard').innerHTML='<div class="lvlbig"><div class="lvl num" data-plate="'+pl+'">'+g.lv+'</div><div><b class="lvt">'+g.title+'</b><p class="msg num">Level '+g.lv+' · '+toNext+' · '+g.xp.toLocaleString()+' XP in total</p>'+(rewardFor(g.lv+1)?'<p class="msg" style="margin:0">Level '+(g.lv+1)+' reward: <b>'+esc(rewardFor(g.lv+1))+'</b></p>':'')+'</div></div><div class="xpbar"><i style="width:'+pct+'%"></i></div><div class="stats"><div class="stat"><b class="num">'+g.streak+'</b><span>streak</span></div><div class="stat"><b class="num">'+g.best+'</b><span>best streak</span></div><div class="stat"><b class="num">'+g.freezes+'</b><span>freezes</span></div></div>';
   const MED='<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="14" r="6"/><path d="M9 9 7 2h4l1 3 1-3h4l-2 7"/></svg>';
-  renderRewards();
   {const wg=weekGoal(today),a=$('rule-perfect'),b=$('rule-ontime');if(a)a.textContent=wg+' of '+wg+' workouts in a week';if(b&&iso(today)>=NEW_WEEK_FROM)b.textContent='Start on time (by 7:15; days off have no target)'}
-  $('bgrid').innerHTML=g.badges.map(([n,d,on,p])=>'<div class="bd'+(on?' on':'')+'"><div class="medal">'+MED+'</div><b>'+n+'</b><small>'+d+'</small><span class="bp">'+(on?'Earned':p)+'</span></div>').join('');
+  renderStats();
 }
 
 /* header, strip, stats */
@@ -4999,7 +5064,7 @@ $('session').addEventListener('change',e=>{const ki=e.target.closest('input[data
   const w=e.target.closest('input[data-wu],input[data-mob]');
   if(w&&cur){const k=w.dataset.wu!=null?'warmup':'mobility',i=w.dataset.wu!=null?w.dataset.wu:w.dataset.mob;cur[k]=cur[k]||{};cur[k][i]=w.checked;
     if(k==='warmup'){cur.wuOpen=false;if(warmDone()>=warmList().length){toast('Warmed up. First set: '+((cur.exercises||[])[0]||{name:'go'}).name);if(cur.phase==='warmup'&&mode==='live'){cur.phase='work';setTimeout(()=>{try{window.scrollTo({top:$('session').offsetTop-8,behavior:'smooth'})}catch(e){}},80)}}}
-    else if(mobList(cur.key).every((_,j)=>cur.mobility[j])){setTimeout(()=>toast('Cool-down done · +10 XP'),120)}
+    else if(mobList(cur.key).every((_,j)=>cur.mobility[j])){setTimeout(()=>toast('Cool-down done'),120)}
     persist();renderSession();return}
   const c=e.target.closest('input[data-chk]');if(c&&cur){cur.checked=cur.checked||{};cur.checked[c.dataset.chk]=c.checked;persist();if(mode!=='live'&&(cur.type==='rest'||cur.type==='cardio'))renderSession()}});
 
@@ -5556,7 +5621,7 @@ $('wtform').addEventListener('submit',async e=>{e.preventDefault();const m=$('wt
 
 /* ---------- Level rewards ---------- */
 const LVT=['Rookie','Regular','Committed','Grinder','Iron','Engine','Hybrid','Half-marathon ready','Machine'];
-$('rwform').addEventListener('submit',async e=>{e.preventDefault();const m=$('rwmsg'),lv={};[2,3,4,5,6,7,8,9].forEach(l=>{const v=$('rw'+l).value.trim();if(v)lv[l]=v.slice(0,60)});
+($('rwform')||document.createElement('form')).addEventListener('submit',async e=>{e.preventDefault();const m=$('rwmsg'),lv={};[2,3,4,5,6,7,8,9].forEach(l=>{const v=$('rw'+l).value.trim();if(v)lv[l]=v.slice(0,60)});
   if(!db){m.className='msg err';m.textContent='Saving isn\'t available right now. Reopen the page and try again.';return}
   try{await db.doc('rewards/list').set({levels:lv,updatedAt:new Date().toISOString()});rewards={levels:lv};m.className='msg';m.textContent='Saved. '+Object.keys(lv).length+' reward'+(Object.keys(lv).length===1?'':'s')+' set.';renderGame()}
   catch(err){m.className='msg err';m.textContent='Couldn\'t save. Check your connection and try again.'}});
@@ -5709,6 +5774,8 @@ function rvScore(c,T){const pct=(a,b)=>b?a/b:0,up=c.lifts.filter(l=>l.pct>0).len
 /* navigation */
 function setView(v){setTimeout(()=>navInd(false),0);view=v;document.body.dataset.view=v;$('view-today').hidden=v!=='today';$('view-prog').hidden=v!=='prog';$('view-review').hidden=v!=='review';$('view-ev').hidden=v!=='ev';if(v==='ev')renderEv();$('view-badges').hidden=v!=='badges';['today','prog','badges'].forEach(k=>{const on=v===k||((v==='review'||v==='ev')&&k==='prog');if(on)$('tab-'+k).setAttribute('aria-current','page');else $('tab-'+k).removeAttribute('aria-current')});if(v==='prog')renderProgress();if(v==='review')renderReview();if(v==='badges')renderGame();try{window.scrollTo({top:0})}catch(e){}}
 $('tab-today').onclick=()=>setView('today');$('tab-prog').onclick=()=>setView('prog');$('tab-badges').onclick=()=>setView('badges');
+$('tab-cal').onclick=()=>{if(view!=='today')setView('today');try{openCal()}catch(e){}};
+$('tab-ody').onclick=()=>{try{if(window.odyTabOpen)odyTabOpen();else toast('Ody isn\'t available right now')}catch(e){}};
 /* Progress sections: Coach, Body, Training. The last one he opened is remembered on this phone */
 let progTab='coach';try{const t=localStorage.getItem('progTab');if(['coach','body','train'].includes(t))progTab=t}catch(e){}
 $('ptabs').addEventListener('click',e=>{const b=e.target.closest('[data-pt]');if(!b)return;setPT(b.dataset.pt);try{window.scrollTo({top:0})}catch(_){}});
@@ -5860,7 +5927,7 @@ try{
   function slide(el,dir,dist,delay){if(!el||RM()||!el.animate)return;try{el.animate([{opacity:0,transform:'translateX('+(dir*dist)+'px)'},{opacity:1,transform:'none'}],{duration:280,delay:delay||0,easing:'cubic-bezier(.165,.84,.44,1)',fill:'backwards'})}catch(e){}}
   function kStats(){try{let el=$('kstats');if(!el){el=document.createElement('section');el.id='kstats';el.className='kstats';el.setAttribute('aria-label','Level, streak and this week');const x=$('xpc');x.parentNode.insertBefore(el,x)}
     const g=game(),span=g.next-g.floor,pct=Math.max(3,Math.min(100,(g.xp-g.floor)/span*100)),Q=g.quests||[],md=Q.find(q=>/must/i.test(String(q[0]))),dn=Q.filter(q=>q[1]>=q[2]).length;
-    el.innerHTML='<div class="kt" aria-label="Level '+g.lv+', '+esc(g.title)+'"><b>Lv <i class="num">'+g.lv+'</i></b><small class="num">'+esc(g.title)+' · <span style="white-space:nowrap">'+(g.next-g.xp).toLocaleString()+' XP</span> to go</small><div class="kbar"><i style="width:'+pct+'%"></i></div></div>'+
+    el.innerHTML=stWeekTile()+
       '<div class="kt"><b><span class="num">'+g.streak+'</span> <span aria-hidden="true">🔥</span></b><small>day streak'+(g.freezes?' · '+g.freezes+' ❄':'')+'</small></div>'+
       (md?'<div class="kt"><b class="num">'+Math.min(md[1],md[2])+' <i>of '+md[2]+'</i></b><small>must-dos this week</small></div>':'<div class="kt"><b class="num">'+dn+' <i>of '+Q.length+'</i></b><small>quests this week</small></div>');
     el.hidden=(mode==='live'||mode==='feedback')}catch(e){}}
@@ -6279,7 +6346,7 @@ async function odySend(text){text=String(text||'').trim();if(!text||odyBusy||!od
   const at=new Date().toISOString();ODY.turns.push({role:'user',text,at},{role:'assistant',text:out||m.text||'',at,...(m.changes?{changes:m.changes}:{})});ODY.turns=ODY.turns.slice(-30);
   try{if(db)await db.doc('chat/'+k).set({date:k,turns:ODY.turns,updatedAt:at})}catch(e){}}
 async function odySaveChanges(){const k=odyK();try{const at=new Date().toISOString(),i=ODY.turns.length-1;if(db&&i>=0){await db.doc('chat/'+k).set({date:k,turns:ODY.turns,updatedAt:at})}}catch(e){}}
-$('odyFab').onclick=odyOpen;
+$('odyFab').onclick=odyOpen;window.odyTabOpen=()=>{if(!odyOn){toast('Ody isn\'t available right now');return}if(view!=='today')setView('today');odyOpen()};
 $('ody').addEventListener('click',async e=>{if(e.target.closest('[data-odyx]')){odyClose();return}
   const q=e.target.closest('[data-odyq]');if(q){odySend(q.dataset.odyq);return}
   const u=e.target.closest('[data-odyu]');if(u){const m=ODY.msgs[+u.dataset.odyu];if(!m||m.undone||!m.undos)return;u.disabled=true;try{for(const f of m.undos.slice().reverse())await f();m.undone=true;toast('Undone')}catch(err){toast('Couldn\'t undo that. Try again.');u.disabled=false}odyRender();return}
