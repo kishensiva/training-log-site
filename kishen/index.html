@@ -3702,6 +3702,10 @@ function rewardFor(lv){return rewards&&rewards.levels&&rewards.levels[lv]?String
    Everything is worked out from the saved days (logs), so all past training counts. Distance only counts when it was recorded. ---------- */
 let STR='week';
 const ST_RUNM=m=>m==='run'||m==='treadmill',ST_MACH=m=>m==='bike'||m==='row';
+/* 29 Nov 2026: timed stations count their distance (Run 1 km = 1 km per round, Row 500 m = 0.5 km). Runs count as running,
+   row, ski and bike as machine km. Sled pieces don't count. A station round never counts as the "longest run". */
+function stStationKm(name){const x=X[name]||{};if(x.unit!=='t')return null;const m=/([\d.]+)\s*(km|m)\b/.exec(String(x.lbl||name));if(!m)return null;
+  const km=+m[1]/(m[2]==='km'?1:1000),n=String(name).toLowerCase();if(/^run\b/.test(n))return{km,run:true};if(/row|ski|bike/.test(n))return{km,run:false};return null}
 function stMins(l){if(!l)return 0;if(l.type==='cardio'||l.run){const m=+((l.run||{}).done||{}).mins;if(m>0&&m<600)return m}
   if(+l.durationMin>0&&+l.durationMin<300)return +l.durationMin;
   if(l.startedAt&&l.finishedAt){const m=(Date.parse(l.finishedAt)-Date.parse(l.startedAt))/6e4;if(m>=5&&m<=240)return Math.round(m)}return 0}
@@ -3709,7 +3713,7 @@ function stCalc(from,to){const f=iso(from),t=iso(to),o={kg:0,sets:0,reps:0,prs:0
   Object.keys(logs).forEach(k=>{if(k<f||k>t)return;const l=logs[k];if(!l||!['done','partial','recovery'].includes(l.status))return;
     if(l.type!=='rest'&&l.status!=='recovery')o.done++;
     o.mins+=stMins(l);o.kg+=+l.volume||0;o.prs+=(l.prs||[]).length;
-    (l.exercises||[]).forEach(e=>{const x=X[e.name]||{};(e.sets||[]).forEach(s=>{if(!s.done||s.t==='W')return;o.sets++;if(x.unit)return;o.reps+=+s.reps||0;
+    (l.exercises||[]).forEach(e=>{const x=X[e.name]||{},sk=stStationKm(e.name);(e.sets||[]).forEach(s=>{if(!s.done||s.t==='W')return;o.sets++;if(sk){if(sk.run)o.runKm+=sk.km;else o.machKm+=sk.km}if(x.unit)return;o.reps+=+s.reps||0;
       if(!x.bw&&+s.kg>0&&(!o.top||+s.kg>o.top.kg))o.top={kg:+s.kg,name:e.name}})});
     const d=(l.run||{}).done||{},km=+d.km||0;if(km>0){if(ST_MACH(d.mode))o.machKm+=km;else if(ST_RUNM(d.mode||'run')){o.runKm+=km;o.longRun=Math.max(o.longRun,km)}}});
   for(let d=new Date(Math.max(from,START));d<=to&&d<=today;d=addDays(d,1)){try{const p=effPlan(d);if(p&&p.type!=='rest'&&!p.optional)o.plan++}catch(e){}}
@@ -3736,8 +3740,8 @@ function renderStats(){const el=$('view-badges');if(!el)return;
   h+='<div class="st-hero">'+big(kg.n,kg.u,'weight lifted',p?stDelta(c.kg,p.kg):'')+big(c.runKm,'km','run',p?stDelta(c.runKm,p.runKm,x=>(Math.round(x*10)/10)+' km'):'')+
     big(c.done,'',c.done===1?'workout':'workouts',c.plan&&STR!=='all'?'<em>of '+c.plan+' planned</em>':'')+big(tm.n,tm.u,'training time',p?stDelta(c.mins,p.mins,x=>{const q=stHm(x);return q.n+' '+q.u}):'')+'</div>';
   h+='<section class="card"><h2>Lifting</h2>'+row('Sets done',c.sets.toLocaleString())+row('Reps done',c.reps.toLocaleString())+row('Personal bests',c.prs)+row('Heaviest lift',c.top?esc(c.top.name)+' '+r1(c.top.kg)+' kg':'–')+'</section>';
-  h+='<section class="card"><h2>Cardio</h2>'+row('Running',c.runKm+' km')+row('Bike + rower',c.machKm+' km')+row('Longest run',c.longRun?c.longRun+' km':'–')+(c.steps?row('Steps (Garmin)',c.steps.toLocaleString()):'')+
-    '<p class="st-note">Distance counts when your watch or you recorded it.</p></section>';
+  h+='<section class="card"><h2>Cardio</h2>'+row('Running',c.runKm+' km')+row('Bike, rower + ski',c.machKm+' km')+row('Longest run',c.longRun?c.longRun+' km':'–')+(c.steps?row('Steps (Garmin)',c.steps.toLocaleString()):'')+
+    '<p class="st-note">Distance counts when your watch or you recorded it, plus Run and Row stations.</p></section>';
   const ms=[];const tT=all.kg/1000,nT=stNext(tT,[10,25,50,100,250,500,1000,2500]);ms.push([nT+' t lifted, all time',(Math.round(tT*10)/10)+' t',tT/nT]);
   const nK=stNext(all.runKm,[25,50,100,250,500,1000,2500]);ms.push([nK+' km run, all time',all.runKm+' km',all.runKm/nK]);
   if(typeof ST_GOAL!=='undefined'&&ST_GOAL)ms.push([ST_GOAL.label,all.longRun+' of '+ST_GOAL.km+' km',all.longRun/ST_GOAL.km]);

@@ -3629,6 +3629,10 @@ function rewardFor(lv){return rewards&&rewards.levels&&rewards.levels[lv]?String
    Everything is worked out from the saved days (logs), so all past training counts. Distance only counts when it was recorded. ---------- */
 let STR='week';
 const ST_RUNM=m=>m==='run'||m==='treadmill',ST_MACH=m=>m==='bike'||m==='row';
+/* 29 Nov 2026: timed stations count their distance (Run 1 km = 1 km per round, Row 500 m = 0.5 km). Runs count as running,
+   row, ski and bike as machine km. Sled pieces don't count. A station round never counts as the "longest run". */
+function stStationKm(name){const x=X[name]||{};if(x.unit!=='t')return null;const m=/([\d.]+)\s*(km|m)\b/.exec(String(x.lbl||name));if(!m)return null;
+  const km=+m[1]/(m[2]==='km'?1:1000),n=String(name).toLowerCase();if(/^run\b/.test(n))return{km,run:true};if(/row|ski|bike/.test(n))return{km,run:false};return null}
 function stMins(l){if(!l)return 0;if(l.type==='cardio'||l.run){const m=+((l.run||{}).done||{}).mins;if(m>0&&m<600)return m}
   if(+l.durationMin>0&&+l.durationMin<300)return +l.durationMin;
   if(l.startedAt&&l.finishedAt){const m=(Date.parse(l.finishedAt)-Date.parse(l.startedAt))/6e4;if(m>=5&&m<=240)return Math.round(m)}return 0}
@@ -3636,7 +3640,7 @@ function stCalc(from,to){const f=iso(from),t=iso(to),o={kg:0,sets:0,reps:0,prs:0
   Object.keys(logs).forEach(k=>{if(k<f||k>t)return;const l=logs[k];if(!l||!['done','partial','recovery'].includes(l.status))return;
     if(l.type!=='rest'&&l.status!=='recovery')o.done++;
     o.mins+=stMins(l);o.kg+=+l.volume||0;o.prs+=(l.prs||[]).length;
-    (l.exercises||[]).forEach(e=>{const x=X[e.name]||{};(e.sets||[]).forEach(s=>{if(!s.done||s.t==='W')return;o.sets++;if(x.unit)return;o.reps+=+s.reps||0;
+    (l.exercises||[]).forEach(e=>{const x=X[e.name]||{},sk=stStationKm(e.name);(e.sets||[]).forEach(s=>{if(!s.done||s.t==='W')return;o.sets++;if(sk){if(sk.run)o.runKm+=sk.km;else o.machKm+=sk.km}if(x.unit)return;o.reps+=+s.reps||0;
       if(!x.bw&&+s.kg>0&&(!o.top||+s.kg>o.top.kg))o.top={kg:+s.kg,name:e.name}})});
     const d=(l.run||{}).done||{},km=+d.km||0;if(km>0){if(ST_MACH(d.mode))o.machKm+=km;else if(ST_RUNM(d.mode||'run')){o.runKm+=km;o.longRun=Math.max(o.longRun,km)}}});
   for(let d=new Date(Math.max(from,START));d<=to&&d<=today;d=addDays(d,1)){try{const p=effPlan(d);if(p&&p.type!=='rest'&&!p.optional)o.plan++}catch(e){}}
@@ -3663,8 +3667,8 @@ function renderStats(){const el=$('view-badges');if(!el)return;
   h+='<div class="st-hero">'+big(kg.n,kg.u,'weight lifted',p?stDelta(c.kg,p.kg):'')+big(c.runKm,'km','run',p?stDelta(c.runKm,p.runKm,x=>(Math.round(x*10)/10)+' km'):'')+
     big(c.done,'',c.done===1?'workout':'workouts',c.plan&&STR!=='all'?'<em>of '+c.plan+' planned</em>':'')+big(tm.n,tm.u,'training time',p?stDelta(c.mins,p.mins,x=>{const q=stHm(x);return q.n+' '+q.u}):'')+'</div>';
   h+='<section class="card"><h2>Lifting</h2>'+row('Sets done',c.sets.toLocaleString())+row('Reps done',c.reps.toLocaleString())+row('Personal bests',c.prs)+row('Heaviest lift',c.top?esc(c.top.name)+' '+r1(c.top.kg)+' kg':'–')+'</section>';
-  h+='<section class="card"><h2>Cardio</h2>'+row('Running',c.runKm+' km')+row('Bike + rower',c.machKm+' km')+row('Longest run',c.longRun?c.longRun+' km':'–')+(c.steps?row('Steps (Garmin)',c.steps.toLocaleString()):'')+
-    '<p class="st-note">Distance counts when your watch or you recorded it.</p></section>';
+  h+='<section class="card"><h2>Cardio</h2>'+row('Running',c.runKm+' km')+row('Bike, rower + ski',c.machKm+' km')+row('Longest run',c.longRun?c.longRun+' km':'–')+(c.steps?row('Steps (Garmin)',c.steps.toLocaleString()):'')+
+    '<p class="st-note">Distance counts when your watch or you recorded it, plus Run and Row stations.</p></section>';
   const ms=[];const tT=all.kg/1000,nT=stNext(tT,[10,25,50,100,250,500,1000,2500]);ms.push([nT+' t lifted, all time',(Math.round(tT*10)/10)+' t',tT/nT]);
   const nK=stNext(all.runKm,[25,50,100,250,500,1000,2500]);ms.push([nK+' km run, all time',all.runKm+' km',all.runKm/nK]);
   if(typeof ST_GOAL!=='undefined'&&ST_GOAL)ms.push([ST_GOAL.label,all.longRun+' of '+ST_GOAL.km+' km',all.longRun/ST_GOAL.km]);
@@ -6113,15 +6117,15 @@ window.AK={reloadRules:()=>{AK_RULES=null},open:()=>odyOpen(),send:t=>odySend(t)
     try{const s=await claude.use('sample');if(!s)throw new Error('no-ai');const img=await shrink(file);
       const cat=Object.keys(X).map(k=>'- '+k+' ('+UNIT(X[k])+')').join('\n');
       const q='This photo shows a workout Eleanor did (a whiteboard, a sheet, a screenshot or a watch summary). Read it and return ONLY JSON, no other text:\n'+
-        '{"title":"short name for the session","exercises":[{"name":"<exact name from the list>","sets":[{"kg":number|null,"reps":number|null,"secs":number|null,"m":number|null}]}],"other":["anything on the photo that matches no name in the list, as short text"]}\n'+
+        '{"title":"short name for the session","mins":number|null,"exercises":[{"name":"<exact name from the list>","sets":[{"kg":number|null,"reps":number|null,"secs":number|null,"m":number|null}]}],"other":["anything on the photo that matches no name in the list, as short text"]}\n'+
         'Use only these exercise names, exactly as written, and pick the closest one when it is clearly the same movement:\n'+cat+'\n'+
-        'Times go in secs (6:30 = 390). Distances in metres go in m. Weights in kg. One entry in sets per set or round. Leave out anything you cannot read; never guess numbers.';
+        'mins is the total session time if the photo shows it, else null. Times go in secs (6:30 = 390). Distances in metres go in m. Weights in kg. One entry in sets per set or round. Leave out anything you cannot read; never guess numbers.';
       const r=await s(q,{images:[img],modelTier:'default'});const t=String((r&&r.text)||'');const j=JSON.parse(t.slice(t.indexOf('{'),t.lastIndexOf('}')+1));
       const ex=[],other=Array.isArray(j.other)?j.other.map(String).slice(0,10):[];
       (j.exercises||[]).forEach(e=>{const n=match(e&&e.name);if(!n){if(e&&e.name)other.push(String(e.name));return}
         const sets=(e.sets||[]).slice(0,12).map(z=>({kg:z.kg!=null?+z.kg:null,reps:z.reps!=null?+z.reps:null,secs:z.secs!=null?+z.secs:null,m:z.m!=null?+z.m:null}));if(sets.length)ex.push({name:n,sets})});
       if(!ex.length&&!other.length)throw new Error('empty');
-      PL.data={title:String(j.title||'').slice(0,60),ex,other};PL.busy=false;review()}
+      PL.data={title:String(j.title||'').slice(0,60),mins:+j.mins>0&&+j.mins<300?Math.round(+j.mins):null,ex,other};PL.busy=false;review()}
     catch(e){PL.busy=false;const m=String(e&&e.message);
       sheetHtml('<h2>Couldn\'t read that one</h2><p>'+(m==='no-ai'?'Logging from a photo needs the Ody app from your home screen.':'Try a sharper photo with the whole workout in frame, or log it by hand.')+'</p><div class="row"><button type="button" data-plg="again" class="primary">Try another photo</button><button type="button" data-plg="x">Close</button></div>');wire()}}
 
@@ -6133,11 +6137,12 @@ window.AK={reloadRules:()=>{AK_RULES=null},open:()=>odyOpen(),send:t=>odySend(t)
   function review(){const d=PL.data,day=parse(PL.date),had=logs[PL.date]&&['done','partial'].includes(logs[PL.date].status);
     let h='<h2>Check it before saving</h2><p>Fix anything the photo got wrong. Saved to '+DN[day.getDay()]+' '+short(day)+(had?'. This replaces what is already logged that day.':'.')+'</p>';
     d.ex.forEach((e,i)=>{const x=X[e.name]||{};h+='<div class="ex"><div class="exh"><span>'+esc(e.name)+'</span><button type="button" data-plg="del" data-e="'+i+'" aria-label="Remove '+esc(e.name)+'">×</button></div>'+e.sets.map((z,k)=>setHtml(x,z,i,k)).join('')+'</div>'});
+    h+='<div class="ex"><div class="exh"><span>How long did it take?</span></div><div class="set"><input id="plgMins" value="'+(d.mins||'')+'" inputmode="numeric" aria-label="Minutes">minutes</div></div>';
     if(d.other.length)h+='<div class="ex"><div class="exh"><span>Also on the photo</span></div><p>'+d.other.map(esc).join(' · ')+'</p><p>Saved as a note on the day.</p></div>';
     h+='<div class="row"><button type="button" data-plg="x">Cancel</button><button type="button" class="primary" data-plg="save"'+(d.ex.length?'':' disabled')+'>Save workout</button></div>';
     sheetHtml(h);wire()}
 
-  function readInputs(){document.querySelectorAll('.plg input[data-e]').forEach(n=>{const e=PL.data.ex[+n.dataset.e];if(!e)return;const z=e.sets[+n.dataset.k],f=n.dataset.f,v=n.value.trim();
+  function readInputs(){{const m=document.getElementById('plgMins');if(m&&PL.data){const v=+m.value.trim();PL.data.mins=v>0&&v<300?Math.round(v):null}}document.querySelectorAll('.plg input[data-e]').forEach(n=>{const e=PL.data.ex[+n.dataset.e];if(!e)return;const z=e.sets[+n.dataset.k],f=n.dataset.f,v=n.value.trim();
     z[f]=f==='secs'?secs(v):v===''?null:+v.replace(',','.')})}
 
   async function save(){if(!PL.data)return;readInputs();const d=PL.data;
@@ -6145,7 +6150,7 @@ window.AK={reloadRules:()=>{AK_RULES=null},open:()=>odyOpen(),send:t=>odySend(t)
     const ex=d.ex.map(e=>{const x=X[e.name]||{};const sets=e.sets.map(z=>{const reps=x.unit==='t'||x.unit==='s'?z.secs:x.unit==='m'?z.m:z.reps,kg=x.bw?0:(+z.kg||0);
         return reps>0?{t:'N',kg,reps:+reps,tkg:kg,treps:+reps,done:true}:null}).filter(Boolean);return sets.length?{name:e.name,slug:slug(e.name),sets,fromPhoto:true}:null}).filter(Boolean);
     if(!ex.length){toast('Add at least one set with a number first.');return}
-    cur.type='lift';cur.exercises=ex;cur.fromPhoto=true;if(d.title)cur.title=d.title;
+    cur.type='lift';cur.exercises=ex;cur.fromPhoto=true;if(d.mins){cur.durationMin=d.mins;cur.startedAt=null}if(d.title)cur.title=d.title;
     if(d.other.length)cur.note=((cur.note?cur.note+' · ':'')+'From photo: '+d.other.join(', ')).slice(0,400);
     close();try{await finishSave('done',true)}catch(e){toast('Couldn\'t save that. Try again.')}}
 
