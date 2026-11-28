@@ -2757,10 +2757,11 @@ html,button,a,label,input,summary,[role=button],[role=tab]{-webkit-tap-highlight
 .ptabs.ptabs button[aria-selected="true"]{color:var(--fg)}
 #view-prog>section{animation:none}
 @media (prefers-reduced-motion:reduce){.ptabs::before,.tick input[type=checkbox],.ins.kf .ih::after{transition:none}}
-.ody-fab{position:fixed;z-index:9;right:max(16px,calc((100vw - 560px)/2 + 16px));bottom:calc(74px + env(safe-area-inset-bottom,0px));height:52px;min-height:52px;padding:0 18px 0 13px;border-radius:999px;border:0;display:flex;align-items:center;gap:9px;font:650 14px var(--body);color:#fff;background:linear-gradient(180deg,rgba(40,48,66,.94),rgba(20,25,36,.94));box-shadow:0 10px 30px -8px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12),0 0 0 1px rgba(255,255,255,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:opacity .18s ease-out,transform .18s ease-out}
+.ody-fab{position:fixed;z-index:9;right:max(16px,calc((100vw - 560px)/2 + 16px));bottom:calc(74px + env(safe-area-inset-bottom,0px));height:52px;min-height:52px;padding:0 18px 0 13px;border-radius:999px;border:0;display:flex;align-items:center;gap:0;font:650 14px var(--body);color:#fff;background:linear-gradient(180deg,rgba(40,48,66,.98),rgba(20,25,36,.98));box-shadow:0 10px 30px -8px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12),0 0 0 1px rgba(255,255,255,.08);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);transition:opacity .18s ease-out,transform .18s ease-out,padding .2s ease-out}
 .ody-fab[hidden]{display:none}
-.ody-fab.tuck{padding:0;width:52px;justify-content:center}
-.ody-fab.tuck .ody-l{display:none}
+.ody-l{margin-left:9px;max-width:140px;overflow:hidden;white-space:nowrap;transition:max-width .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out}
+.ody-fab.tuck{padding:0 13px}
+.ody-fab.tuck .ody-l{max-width:0;margin-left:0;opacity:0}
 .ody-fab.gone{opacity:0;pointer-events:none;transform:translateY(8px)}
 .ody-orb{width:26px;height:26px;border-radius:50%;flex:none;position:relative;background:conic-gradient(from 200deg,#ff8a93,#ffe08a,#7ff0cf,#6f93ff,#ff8a93);box-shadow:0 0 14px rgba(255,140,150,.5)}
 .ody-orb::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#141924}
@@ -2816,7 +2817,7 @@ html,button,a,label,input,summary,[role=button],[role=tab]{-webkit-tap-highlight
 .ody-go.stop{background:var(--fg);color:var(--bg)}
 .ody-empty{font:500 13px/1.45 var(--body);color:var(--muted);margin:4px 2px}
 body:has(#gym) .ody-fab,body[data-view]:not([data-view="today"]) .ody-fab{display:none}
-@media (prefers-reduced-motion:reduce){.ody-fab{transition:none}}
+@media (prefers-reduced-motion:reduce){.ody-fab,.ody-l{transition:none}}
 .ody-sh{top:0;bottom:var(--kb,0px);height:auto;max-height:none;border-radius:0;padding-top:calc(env(safe-area-inset-top,0px) + 12px);box-shadow:none}
 .ody-dim{background:var(--kcard,var(--card))}
 .ody-grab{display:none}
@@ -6225,10 +6226,12 @@ function odyCtx(){const L=[],t=today,ws=wkStart(t),w=weekOf(t);
 const ODY_CHIPS=[['Lighter today','I feel weak today, make it lighter'],['Make it Express','Make today Express'],['My progress','How are my main lifts progressing over the last month?'],['Protein today','How much protein should I aim for today, and easy ways to get it?'],['Move to tomorrow','Move today\'s session to tomorrow']];
 function odyFab(){{const t=$('tellc');if(t)t.hidden=!!odyOn}const f=$('odyFab');if(!f)return;const show=odyOn&&view==='today'&&!ODY.open&&!['live','feedback','night'].includes(mode)&&!$('gym');f.hidden=!show;if(show)odyTuck()}
 /* never on top of a control on the session card: shrink to the orb, or step aside until he scrolls */
-function odyTuck(){const f=$('odyFab');if(!f||f.hidden)return;f.classList.remove('tuck','gone');const q=f.getBoundingClientRect(),els=[...document.querySelectorAll('#view-today button,#view-today a[href],#view-today input,#view-today select,#session .tomrow')].filter(b=>b!==f&&!f.contains(b));   /* 20 Nov: any button on Today, not just the session card's (it sat on the Recovery button) */
+function odyMove(){const f=$('odyFab');if(!f||f.hidden)return;f.classList.remove('gone');f.classList.add('tuck')}   /* while the page moves: just the orb, no flipping */
+function odyTuck(){const f=$('odyFab');if(!f||f.hidden)return;const l=f.querySelector('.ody-l'),q=f.getBoundingClientRect(),fw=66+(l?l.scrollWidth:0),dy=f.classList.contains('gone')?-8:0,els=[...document.querySelectorAll('#view-today button,#view-today a[href],#view-today input,#view-today select,#session .tomrow')].filter(b=>b!==f&&!f.contains(b));   /* 20 Nov: any button on Today, not just the session card's (it sat on the Recovery button) */
   const hit=a=>els.some(b=>{const r=b.getBoundingClientRect();return r.width>0&&r.bottom>a.top-6&&r.top<a.bottom+6&&r.right>a.left-6&&r.left<a.right+6});
-  if(hit(q))f.classList.add(hit({top:q.top,bottom:q.bottom,left:q.right-52,right:q.right})?'gone':'tuck')}
-addEventListener('scroll',()=>{if(!odyOn)return;cancelAnimationFrame(window._odyT);window._odyT=requestAnimationFrame(odyTuck)},{passive:true});addEventListener('resize',()=>{odyTuck();odyVV()});
+  const T=q.top+dy,B=q.bottom+dy,want=hit({top:T,bottom:B,left:q.right-fw,right:q.right})?(hit({top:T,bottom:B,left:q.right-52,right:q.right})?'gone':'tuck'):'';   /* decided from the full-size slot without touching the pill's state */
+  f.classList.toggle('tuck',want==='tuck');f.classList.toggle('gone',want==='gone')}
+addEventListener('scroll',()=>{if(!odyOn)return;odyMove();clearTimeout(window._odyI);window._odyI=setTimeout(odyTuck,140)},{passive:true});addEventListener('resize',()=>{odyTuck();odyVV()});
 /* keyboard: the sheet sits on the bottom of what he can see. Works whether the app shrinks this page (window resize) or only the
    visual viewport changes; if the field still ends up under the keyboard, the sheet is lifted by the overlap */
 function odyVV(){const sh=$('ody');if(!sh||sh.hidden)return;const v0=window.visualViewport,t0=$('odyIn'),foc=t0&&document.activeElement===t0;if(!foc)ODY.h0=Math.max(ODY.h0||0,innerHeight);
